@@ -32,7 +32,7 @@ export class Visual implements IVisual {
     private fmtService: FormattingSettingsService;
 
     private dataView?: DataView;
-    private jsonFilters?: unknown[];
+    private jsonFilters?: powerbi.IFilter[];
     private history: ChatMessage[] = [];
     private proxyKey = "";
     private busy = false;
@@ -59,7 +59,7 @@ export class Visual implements IVisual {
         this.settings = this.fmtService.populateFormattingSettingsModel(
             VisualFormattingSettingsModel, options.dataViews?.[0]);
         this.dataView = options.dataViews?.[0];
-        this.jsonFilters = (options as any).jsonFilters; // filters applied to this visual, when host supplies them
+        this.jsonFilters = options.jsonFilters; // filters applied to this visual, when host supplies them
         this.refreshContextChip();
 
         const url = this.settings.agentCard.proxyUrl.value?.trim();
@@ -132,9 +132,14 @@ export class Visual implements IVisual {
 
     // ---------- per-user key (never stored in the report) ----------
 
+    /** Local Storage v2 (api 5.11 removed the original storageService; keep it as a runtime fallback for older hosts). */
+    private storage(): { get(k: string): powerbi.IPromise<string>; set(k: string, v: string): powerbi.IPromise<unknown> } | undefined {
+        return this.host.storageV2Service ?? (this.host as any).storageService;
+    }
+
     private loadKey(): void {
         try {
-            (this.host as any).storageService?.get(KEY_STORAGE)
+            this.storage()?.get(KEY_STORAGE)
                 .then((v: string) => { if (v) this.proxyKey = v; })
                 .catch(() => { /* not set yet, or LocalStorage disabled by admin */ });
         } catch { /* storage unavailable: key lives in memory for the session */ }
@@ -142,11 +147,24 @@ export class Visual implements IVisual {
 
     private saveKey(v: string): void {
         this.proxyKey = v;
-        try { (this.host as any).storageService?.set(KEY_STORAGE, v).catch(() => {}); } catch { /* in-memory only */ }
+        try { this.storage()?.set(KEY_STORAGE, v).catch(() => {}); } catch { /* in-memory only */ }
         this.keyRow.style.display = "none";
     }
 
-    private showKeyRow(): void { this.keyRow.style.display = "flex"; this.keyInput.focus(); }
+    private showKeyRow(): void {
+        this.keyRow.style.display = "flex";
+        this.keyInput.focus();
+        // If the admin switch disables visual storage, warn that the key is session-only.
+        try {
+            this.host.storageV2Service?.status()
+                .then(s => {
+                    if (s !== powerbi.PrivilegeStatus.Allowed) {
+                        this.keyInput.placeholder = "Access key (not saved — re-enter each session)";
+                    }
+                })
+                .catch(() => {});
+        } catch { /* keep default placeholder */ }
+    }
 
     // ---------- DOM ----------
 
