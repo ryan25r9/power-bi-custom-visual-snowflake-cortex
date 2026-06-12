@@ -103,10 +103,10 @@ await test("d. happy path -> 200 SSE, streamed, framing intact", async () => {
     assert.ok(text.includes("SELECT region, SUM(sales) s FROM t GROUP BY 1 ORDER BY 2 DESC"), "SQL missing");
     assert.ok(text.includes("chart_spec"), "chart_spec missing");
 
-    // SSE framing preserved verbatim: 11 well-formed "event:/data:" blocks split by \n\n
+    // SSE framing preserved verbatim: 15 well-formed "event:/data:" blocks split by \n\n
     assert.ok(text.endsWith("\n\n"), "stream must end with an event terminator");
     const blocks = text.split("\n\n").filter(b => b.length > 0);
-    assert.equal(blocks.length, 11, `expected 11 SSE events, got ${blocks.length}`);
+    assert.equal(blocks.length, 15, `expected 15 SSE events, got ${blocks.length}`);
     for (const b of blocks) {
         assert.match(b, /^event: [a-z_.]+\ndata: \{.+\}$/,
             `malformed SSE block: ${JSON.stringify(b.slice(0, 80))}`);

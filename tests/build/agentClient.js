@@ -8,6 +8,10 @@
  *   response.tool_use            {"type","name","input",...}              activity trail
  *   response.tool_result.status  {"status","message",...}                 activity trail
  *   response.tool_result         {"type","name","content":[{json}],...}   SQL + charts
+ *   response.warning             {"message"}                              non-fatal warning
+ *   response.text.annotation     {"annotation":{...}}                     citations
+ *   response.chart               {"chart":{"chart_spec":...}}             chart block
+ *   response.table               {"result_set":{...}}                     result-set block
  *   error                        {"message"}                              error
  * Unknown events are ignored by design (Snowflake adds types over time).
  */
@@ -109,6 +113,28 @@ function handleBlock(block, cb) {
         case "response.tool_result":
             extractToolResult(data, cb);
             break;
+        case "response.warning":
+            if (typeof data.message === "string")
+                cb.onWarning?.(data.message);
+            break;
+        case "response.text.annotation":
+            if (data.annotation && typeof data.annotation === "object")
+                cb.onAnnotation?.(data.annotation);
+            break;
+        case "response.chart": {
+            // Documented shape nests the spec under "chart" (often as a JSON string);
+            // unwrap first so findVegaSpec's depth limit isn't spent on the envelope.
+            const spec = findVegaSpec(data.chart ?? data);
+            if (spec)
+                cb.onChart(spec);
+            break;
+        }
+        case "response.table": {
+            const table = extractResultSet(data);
+            if (table)
+                cb.onTable?.(table);
+            break;
+        }
         case "error":
             cb.onError(String(data.message ?? raw));
             break;
@@ -159,6 +185,16 @@ export function findVegaSpec(obj, depth = 0) {
             return found;
     }
     return null;
+}
+/** Pull {columns, rows} out of a response.table payload (Snowflake SQL REST result_set shape). */
+export function extractResultSet(data) {
+    const rs = data?.result_set ?? data?.resultSet ?? data?.table;
+    if (!rs || typeof rs !== "object")
+        return null;
+    const rowType = rs.resultSetMetaData?.rowType ?? rs.result_set_meta_data?.row_type;
+    if (!Array.isArray(rowType) || !Array.isArray(rs.data))
+        return null;
+    return { columns: rowType.map((r) => String(r?.name ?? "")), rows: rs.data };
 }
 async function safeText(r) {
     try {

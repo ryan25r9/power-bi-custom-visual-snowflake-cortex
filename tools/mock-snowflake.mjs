@@ -46,7 +46,16 @@ const EVENTS = [
     ["response.tool_use",
         { content_index: 2, tool_use_id: "toolu_2", type: "data_to_chart", name: "data_to_chart", input: {} }],
     ["response.tool_result",
-        { content_index: 2, tool_use_id: "toolu_2", type: "data_to_chart", name: "data_to_chart", status: "success", content: [{ type: "json", json: { chart_spec: CHART_SPEC } }] }]
+        { content_index: 2, tool_use_id: "toolu_2", type: "data_to_chart", name: "data_to_chart", status: "success", content: [{ type: "json", json: { chart_spec: CHART_SPEC } }] }],
+    // Newer documented events: non-fatal warning, citation annotation, table + chart content blocks.
+    ["response.warning",
+        { message: "Result truncated to the first 10,000 rows." }],
+    ["response.text.annotation",
+        { content_index: 1, annotation_index: 0, annotation: { type: "cortex_search_citation", search_result_id: "sr_1", doc_id: "doc_42", doc_title: "Sales Playbook", text: "West region leads quota attainment." } }],
+    ["response.table",
+        { content_index: 3, result_set: { resultSetMetaData: { rowType: [{ name: "REGION" }, { name: "SALES" }] }, data: [["West", "100"], ["East", "80"]] } }],
+    ["response.chart",
+        { content_index: 4, chart: { chart_spec: JSON.stringify(CHART_SPEC) } }]
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -41,7 +41,10 @@ function recorder() {
             onSql: s => calls.push(["sql", s]),
             onChart: s => calls.push(["chart", s]),
             onDone: () => calls.push(["done"]),
-            onError: e => calls.push(["error", e])
+            onError: e => calls.push(["error", e]),
+            onWarning: m => calls.push(["warning", m]),
+            onAnnotation: a => calls.push(["annotation", a]),
+            onTable: t => calls.push(["table", t])
         }
     };
 }
@@ -273,6 +276,45 @@ test("19. legacy cortex_analyst_text_to_sql blocks still parse (pre-Apr-2026 bac
     assert.deepEqual(rec.calls, [
         ["tool_use", "Analyst1", "cortex_analyst_text_to_sql"],
         ["sql", "SELECT 1"],
+        ["done"]
+    ]);
+});
+
+test("20. response.warning -> onWarning", async () => {
+    const sse =
+        'event: response.warning\ndata: {"message":"Result truncated"}\n\n' +
+        'event: response.text.delta\ndata: {"text":"hi"}\n\n';
+    const rec = await runStream({ body: streamFromChunks([sse]) });
+    assert.deepEqual(rec.calls, [["warning", "Result truncated"], ["text", "hi"], ["done"]]);
+});
+
+test("21. response.text.annotation -> onAnnotation with the annotation object", async () => {
+    const ann = { type: "cortex_search_citation", doc_id: "doc_42", doc_title: "Sales Playbook", text: "West leads." };
+    const sse = `event: response.text.annotation\ndata: ${JSON.stringify({ content_index: 0, annotation_index: 0, annotation: ann })}\n\n`;
+    const rec = await runStream({ body: streamFromChunks([sse]) });
+    assert.deepEqual(rec.calls, [["annotation", ann], ["done"]]);
+});
+
+test("22. response.chart -> onChart for nested-object AND json-string chart_spec", async () => {
+    const spec = { $schema: "https://vega.github.io/schema/vega-lite/v5.json", mark: "bar", encoding: {} };
+    const sse =
+        `event: response.chart\ndata: ${JSON.stringify({ content_index: 4, chart: { chart_spec: spec } })}\n\n` +
+        `event: response.chart\ndata: ${JSON.stringify({ content_index: 5, chart: { chart_spec: JSON.stringify(spec) } })}\n\n`;
+    const rec = await runStream({ body: streamFromChunks([sse]) });
+    assert.deepEqual(rec.calls, [["chart", spec], ["chart", spec], ["done"]]);
+});
+
+test("23. response.table -> onTable {columns, rows} from the SQL REST result_set shape", async () => {
+    const payload = {
+        content_index: 3,
+        result_set: { resultSetMetaData: { rowType: [{ name: "REGION" }, { name: "SALES" }] }, data: [["West", "100"], ["East", "80"]] }
+    };
+    const sse =
+        `event: response.table\ndata: ${JSON.stringify(payload)}\n\n` +
+        'event: response.table\ndata: {"result_set":{"no":"metadata"}}\n\n'; // malformed -> ignored
+    const rec = await runStream({ body: streamFromChunks([sse]) });
+    assert.deepEqual(rec.calls, [
+        ["table", { columns: ["REGION", "SALES"], rows: [["West", "100"], ["East", "80"]] }],
         ["done"]
     ]);
 });

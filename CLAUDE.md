@@ -12,19 +12,21 @@ never yet run against a live Snowflake account or real Power BI tenant.
   Prebuilt artifact: `visual/dist/*.pbiviz`.
 - `proxy/src/functions/agentProxy.ts` — @azure/functions v4 handler; CORS, shared-key auth, SSE passthrough.
 - `snowflake/setup.sql` — role/warehouse/agent DDL, service user, PAT. `deploy.sh` — Azure provisioning.
-- `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 20 unit tests. `PLAN.md` — verification log.
+- `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 24 unit tests. `PLAN.md` — verification log.
 
 ## Commands
 ```bash
 (cd visual && npm install --no-audit --no-fund)   # needed once; node_modules not in repo
 (cd proxy  && npm install --no-audit --no-fund)
-bash tests/run-tests.sh                            # 20 unit tests (compiles via proxy's tsc)
+bash tests/run-tests.sh                            # 24 unit tests (compiles via proxy's tsc)
 bash tools/run-e2e.sh                              # mock-Snowflake → proxy streaming E2E (6 checks)
 (cd visual && ./node_modules/.bin/pbiviz package)  # rebuild .pbiviz into visual/dist/
 ```
 All three must stay green after any change. Tests + mock encode the Snowflake SSE contract
 (`response.text.delta`, `response.status`, `response.tool_use`, `response.tool_result[.status]`,
-`response.thinking.delta`) — if you change parsing, update mock + tests together.
+`response.thinking.delta`, `response.warning`, `response.text.annotation`, `response.chart`,
+`response.table`; SQL tool blocks stream as `system_execute_sql`, legacy
+`cortex_analyst_text_to_sql` still parsed) — if you change parsing, update mock + tests together.
 
 ## Verified already (don't re-prove; do challenge if you find drift)
 Packaged .pbiviz (api 5.11.0, tools 6.2.0) with vega bundled; true incremental streaming through the

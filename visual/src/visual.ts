@@ -114,6 +114,9 @@ export class Visual implements IVisual {
             onToolStatus: (m) => this.setStatus(m),
             onSql: (sql) => this.addSqlBlock(sql),
             onChart: (spec) => this.renderChart(spec),
+            onWarning: (m) => this.addActivity(`⚠ ${m}`),
+            onAnnotation: (a) => this.addAnnotation(a),
+            onTable: (t) => this.renderTable(t),
             onTextDelta: (t) => { answer += t; ensureBubble().textContent = answer; this.scrollDown(); },
             onError: (e) => {
                 if (e === "AUTH") { this.showKeyRow(); ensureBubble().textContent = "⚠ Enter your access key below, then ask again."; }
@@ -235,6 +238,32 @@ export class Visual implements IVisual {
                 pre.textContent = JSON.stringify(spec, null, 2).slice(0, 1500);
                 this.scrollDown();
             });
+    }
+
+    /** Muted citation line for response.text.annotation events. */
+    private addAnnotation(a: Record<string, unknown>): void {
+        const parts = [a.doc_title, a.text].filter((s): s is string => typeof s === "string" && !!s);
+        const label = parts.join(" — ") || String(a.doc_id ?? a.search_result_id ?? "citation");
+        this.addActivity(`📎 Source: ${label}`);
+    }
+
+    /** Render a response.table result set as a real table (textContent only — no HTML injection). */
+    private renderTable(t: { columns: string[]; rows: unknown[][] }): void {
+        const MAX_TABLE_ROWS = 20;
+        const wrap = el("div", "cc-table", this.messagesEl);
+        const table = el("table", "", wrap);
+        const headRow = el("tr", "", el("thead", "", table));
+        for (const c of t.columns) el("th", "", headRow).textContent = c;
+        const body = el("tbody", "", table);
+        const take = Math.min(t.rows.length, MAX_TABLE_ROWS);
+        for (let i = 0; i < take; i++) {
+            const tr = el("tr", "", body);
+            for (const v of t.rows[i]) el("td", "", tr).textContent = v == null ? "" : String(v);
+        }
+        if (t.rows.length > take) {
+            el("div", "cc-table-more", wrap).textContent = `${t.rows.length - take} more rows`;
+        }
+        this.scrollDown();
     }
 
     private refreshContextChip(): void {
