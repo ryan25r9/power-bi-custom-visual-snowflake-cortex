@@ -18,15 +18,25 @@
  * JWT validation and swap SNOWFLAKE_PAT for per-user External OAuth tokens.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { timingSafeEqual } from "node:crypto";
 
 app.setup({ enableHttpStream: true }); // required to relay SSE
 
 const env = (k: string, fallback = ""): string => process.env[k] ?? fallback;
 
+/** Constant-time string comparison (length leak only). */
+function keysMatch(presented: string, expected: string): boolean {
+    const a = Buffer.from(presented), b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export function corsHeaders(req: HttpRequest): Record<string, string> {
     const allowed = env("ALLOWED_ORIGINS", "https://app.powerbi.com").split(",").map(s => s.trim());
     const origin = req.headers.get("origin") ?? "";
-    // Power BI Desktop sends no/null Origin; the Service sends https://app.powerbi.com
+    // Power BI Desktop sends no/null Origin; the Service sends https://app.powerbi.com.
+    // The "*" branch only fires for origin-less clients (Desktop/curl) and we never use
+    // Allow-Credentials, so it grants nothing a non-browser client doesn't already have.
+    // Browser callers from unlisted origins get allowed[0], which won't match -> blocked.
     const allow = allowed.includes(origin) ? origin : (origin ? allowed[0] : "*");
     return {
         "Access-Control-Allow-Origin": allow,
@@ -42,7 +52,9 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
     if (req.method === "OPTIONS") return { status: 204, headers: cors };
 
     // --- auth (POC: shared key; PROD: validate an Entra ID bearer JWT here) ---
-    if (req.headers.get("x-proxy-key") !== env("PROXY_API_KEY") || !env("PROXY_API_KEY")) {
+    // Fail-closed check on the configured key MUST come first; comparison is constant-time.
+    const expectedKey = env("PROXY_API_KEY");
+    if (!expectedKey || !keysMatch(req.headers.get("x-proxy-key") ?? "", expectedKey)) {
         return { status: 401, headers: cors, jsonBody: { error: "bad or missing x-proxy-key" } };
     }
 
@@ -76,9 +88,14 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
     }
 
     if (!upstream.ok || !upstream.body) {
+        // Full upstream body goes to the Function logs only — Snowflake error text can
+        // reveal account/agent internals, so the client gets a generic pointer instead.
         const detail = (await upstream.text().catch(() => "")).slice(0, 500);
         ctx.error(`Snowflake ${upstream.status}: ${detail}`);
-        return { status: upstream.status, headers: cors, jsonBody: { error: "snowflake_error", detail } };
+        return {
+            status: upstream.status, headers: cors,
+            jsonBody: { error: "snowflake_error", detail: `Upstream error (status ${upstream.status}). See proxy logs.` }
+        };
     }
 
     // Pass the SSE stream straight through
