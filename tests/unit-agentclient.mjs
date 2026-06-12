@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { streamAgent, findVegaSpec } from "./build/agentClient.js";
+import { streamAgent, streamAgentWithRetry, findVegaSpec } from "./build/agentClient.js";
 
 const enc = new TextEncoder();
 
@@ -317,4 +317,71 @@ test("23. response.table -> onTable {columns, rows} from the SQL REST result_set
         ["table", { columns: ["REGION", "SALES"], rows: [["West", "100"], ["East", "80"]] }],
         ["done"]
     ]);
+});
+
+// --- streamAgentWithRetry ---------------------------------------------------
+
+/** Runs streamAgentWithRetry against fetch returning each response in turn (1ms backoff base). */
+async function runRetryStream(responses, { maxRetries = 2 } = {}) {
+    const rec = recorder();
+    let fetches = 0;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+        const r = responses[Math.min(fetches, responses.length - 1)];
+        fetches++;
+        if (r instanceof Error) throw r;
+        return { ok: true, status: 200, ...r };
+    };
+    try {
+        await streamAgentWithRetry(
+            "https://proxy.example/agent", "key123", MESSAGES,
+            rec.cb, new AbortController().signal, maxRetries, 1
+        );
+    } finally {
+        globalThis.fetch = origFetch;
+    }
+    return { rec, fetches: () => fetches };
+}
+
+test("24. transient 502 then success -> retried once, content delivered, no onError", async () => {
+    const good = { body: streamFromChunks(['event: response.text.delta\ndata: {"text":"ok"}\n\n']) };
+    const bad = { ok: false, status: 502, body: null, text: async () => "bad gateway" };
+    const { rec, fetches } = await runRetryStream([bad, good]);
+    assert.equal(fetches(), 2, "one retry expected");
+    assert.deepEqual(rec.calls, [["text", "ok"], ["done"]]);
+});
+
+test("25. AUTH (401) is never retried", async () => {
+    const { rec, fetches } = await runRetryStream([{ ok: false, status: 401, body: null }]);
+    assert.equal(fetches(), 1, "auth failures must not retry");
+    assert.deepEqual(rec.calls, [["error", "AUTH"]]);
+});
+
+test("26. no retry once content has streamed (mid-stream failure surfaces)", async () => {
+    let reads = 0;
+    const body = {
+        getReader: () => ({
+            read() {
+                reads++;
+                if (reads === 1) {
+                    return Promise.resolve({
+                        done: false,
+                        value: enc.encode('event: response.text.delta\ndata: {"text":"partial"}\n\n')
+                    });
+                }
+                return Promise.reject(new Error("connection reset"));
+            }
+        })
+    };
+    const { rec, fetches } = await runRetryStream([{ body }]);
+    assert.equal(fetches(), 1, "delivered content must block retries");
+    assert.deepEqual(rec.calls, [["text", "partial"], ["error", "connection reset"]]);
+});
+
+test("27. retries exhausted -> final transient error surfaces once", async () => {
+    const bad = { ok: false, status: 503, body: null, text: async () => "unavailable" };
+    const { rec, fetches } = await runRetryStream([bad], { maxRetries: 1 });
+    assert.equal(fetches(), 2, "initial attempt + 1 retry");
+    assert.equal(rec.of("error").length, 1, "exactly one error must surface");
+    assert.ok(rec.of("error")[0][1].includes("503"));
 });

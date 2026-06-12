@@ -20,7 +20,7 @@ import DataView = powerbi.DataView;
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import { VisualFormattingSettingsModel } from "./settings";
 import { buildContextBlock } from "./contextBuilder";
-import { streamAgent, ChatMessage } from "./agentClient";
+import { streamAgentWithRetry, ChatMessage } from "./agentClient";
 import vegaEmbed from "vega-embed";
 
 const KEY_STORAGE = "cortexChatProxyKey";
@@ -109,7 +109,7 @@ export class Visual implements IVisual {
         const ensureBubble = (): HTMLElement => bubble ?? (bubble = this.addBubble("assistant", ""));
         this.abort = new AbortController();
 
-        await streamAgent(url, this.proxyKey, payload, {
+        await streamAgentWithRetry(url, this.proxyKey, payload, {
             onStatus: (m) => this.setStatus(m),
             onThinkingDelta: () => this.setStatus("Thinking…"),
             onToolUse: (name, type) => this.addActivity(`⚙ ${friendlyTool(type)} · ${name}`),

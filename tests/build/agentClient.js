@@ -67,6 +67,61 @@ export async function streamAgent(proxyUrl, proxyKey, messages, cb, signal) {
             cb.onError(e.message);
     }
 }
+/**
+ * streamAgent with bounded exponential backoff for transient failures.
+ * Retries ONLY while nothing has been delivered yet (no duplicated tokens,
+ * charts, or tool activity), never on the AUTH sentinel, never after abort.
+ */
+export async function streamAgentWithRetry(proxyUrl, proxyKey, messages, cb, signal, maxRetries = 2, baseDelayMs = 1000) {
+    for (let attempt = 0;; attempt++) {
+        let delivered = false;
+        let failure = null;
+        const deliver = (f) => (...args) => { delivered = true; f(...args); };
+        await streamAgent(proxyUrl, proxyKey, messages, {
+            onStatus: deliver(cb.onStatus),
+            onTextDelta: deliver(cb.onTextDelta),
+            onThinkingDelta: deliver(cb.onThinkingDelta),
+            onToolUse: deliver(cb.onToolUse),
+            onToolStatus: deliver(cb.onToolStatus),
+            onSql: deliver(cb.onSql),
+            onChart: deliver(cb.onChart),
+            onDone: deliver(cb.onDone),
+            onWarning: cb.onWarning && deliver(cb.onWarning),
+            onAnnotation: cb.onAnnotation && deliver(cb.onAnnotation),
+            onTable: cb.onTable && deliver(cb.onTable),
+            onError: (e) => { failure = e; }
+        }, signal);
+        if (failure === null || signal.aborted)
+            return; // success, or silent abort
+        if (delivered || !isTransient(failure) || attempt >= maxRetries) {
+            cb.onError(failure);
+            return;
+        }
+        await abortableSleep(baseDelayMs * 2 ** attempt + Math.random() * 250, signal);
+        if (signal.aborted)
+            return;
+    }
+}
+/** Matches streamAgent's own onError wording (same file, keep in sync). */
+function isTransient(err) {
+    if (err === "AUTH")
+        return false; // bad key: retrying can't help
+    if (err.startsWith("Could not reach proxy."))
+        return true; // network-level fetch failure
+    const m = /^Proxy error (\d+):/.exec(err); // pre-stream HTTP failure
+    return m ? [429, 502, 503, 504].includes(Number(m[1])) : false;
+}
+function abortableSleep(ms, signal) {
+    return new Promise((resolve) => {
+        const finish = () => { signal.removeEventListener("abort", finish); clearTimeout(timer); resolve(); };
+        const timer = setTimeout(finish, ms);
+        if (signal.aborted) {
+            finish();
+            return;
+        }
+        signal.addEventListener("abort", finish);
+    });
+}
 function handleBlock(block, cb) {
     let event = "";
     const dataLines = [];
