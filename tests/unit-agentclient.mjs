@@ -183,13 +183,13 @@ test("14. tool_use -> onToolUse; tool_result.status -> onToolStatus; tool_result
         encoding: { x: { field: "REGION" }, y: { field: "SALES" } }
     };
     const sse =
-        'event: response.tool_use\ndata: {"type":"cortex_analyst_text_to_sql","name":"Analyst1","input":{}}\n\n' +
+        'event: response.tool_use\ndata: {"type":"system_execute_sql","name":"Analyst1","input":{}}\n\n' +
         'event: response.tool_result.status\ndata: {"status":"executing","message":"Executing SQL..."}\n\n' +
         'event: response.tool_result\ndata: {"name":"Analyst1","content":[{"type":"json","json":{"sql":"SELECT REGION, SUM(SALES) FROM T GROUP BY 1","text":"interpretation"}}]}\n\n' +
         `event: response.tool_result\ndata: {"name":"Chart1","content":[{"type":"json","json":{"chart_spec":${JSON.stringify(spec)}}}]}\n\n`;
     const rec = await runStream({ body: streamFromChunks([sse]) });
     assert.deepEqual(rec.calls, [
-        ["tool_use", "Analyst1", "cortex_analyst_text_to_sql"],
+        ["tool_use", "Analyst1", "system_execute_sql"],
         ["tool_status", "Executing SQL..."],
         ["sql", "SELECT REGION, SUM(SALES) FROM T GROUP BY 1"],
         ["chart", spec],
@@ -263,4 +263,16 @@ test("18. findVegaSpec recognition matrix", () => {
     assert.equal(findVegaSpec({ spec: { spec: { spec: bare } } }), null);
     // ...but exactly depth 2 still works.
     assert.equal(findVegaSpec({ spec: { chart_spec: bare } }), bare);
+});
+
+test("19. legacy cortex_analyst_text_to_sql blocks still parse (pre-Apr-2026 back-compat)", async () => {
+    const sse =
+        'event: response.tool_use\ndata: {"type":"cortex_analyst_text_to_sql","name":"Analyst1","input":{}}\n\n' +
+        'event: response.tool_result\ndata: {"name":"Analyst1","content":[{"type":"json","json":{"sql":"SELECT 1","text":"legacy"}}]}\n\n';
+    const rec = await runStream({ body: streamFromChunks([sse]) });
+    assert.deepEqual(rec.calls, [
+        ["tool_use", "Analyst1", "cortex_analyst_text_to_sql"],
+        ["sql", "SELECT 1"],
+        ["done"]
+    ]);
 });

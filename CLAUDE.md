@@ -12,13 +12,13 @@ never yet run against a live Snowflake account or real Power BI tenant.
   Prebuilt artifact: `visual/dist/*.pbiviz`.
 - `proxy/src/functions/agentProxy.ts` — @azure/functions v4 handler; CORS, shared-key auth, SSE passthrough.
 - `snowflake/setup.sql` — role/warehouse/agent DDL, service user, PAT. `deploy.sh` — Azure provisioning.
-- `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 18 unit tests. `PLAN.md` — verification log.
+- `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 19 unit tests. `PLAN.md` — verification log.
 
 ## Commands
 ```bash
 (cd visual && npm install --no-audit --no-fund)   # needed once; node_modules not in repo
 (cd proxy  && npm install --no-audit --no-fund)
-bash tests/run-tests.sh                            # 18 unit tests (compiles via proxy's tsc)
+bash tests/run-tests.sh                            # 19 unit tests (compiles via proxy's tsc)
 bash tools/run-e2e.sh                              # mock-Snowflake → proxy streaming E2E (6 checks)
 (cd visual && ./node_modules/.bin/pbiviz package)  # rebuild .pbiviz into visual/dist/
 ```

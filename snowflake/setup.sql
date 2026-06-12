@@ -50,6 +50,9 @@ CREATE OR REPLACE AGENT REPORT_CHAT_AGENT
 
   tools:
     - tool_spec:
+        # "cortex_analyst_text_to_sql" is still the correct *agent-spec* tool type per
+        # current CREATE AGENT docs. Since Apr 2026 the *response stream* emits these
+        # blocks as type "system_execute_sql"; the visual parses both.
         type: "cortex_analyst_text_to_sql"
         name: "Analyst1"
         description: "Query the underlying warehouse data when the report context is insufficient"

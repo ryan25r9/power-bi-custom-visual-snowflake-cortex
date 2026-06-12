@@ -232,7 +232,9 @@ export class Visual implements IVisual {
 
 function friendlyTool(type: string): string {
     switch (type) {
-        case "cortex_analyst_text_to_sql": return "Querying data";
+        case "system_execute_sql":              // Apr 2026+: agents generate SQL directly
+        case "cortex_analyst_text_to_sql":      // pre-Apr-2026 block type, kept for back-compat
+            return "Querying data";
         case "cortex_search": return "Searching documents";
         case "data_to_chart": return "Building chart";
         case "web_search": return "Searching the web";
