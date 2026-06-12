@@ -6,8 +6,8 @@
     "visualClassName": "Visual",
     "version": "1.0.0.0",
     "description": "Chat with a Snowflake Cortex Agent using the report's current filter context.",
-    "supportUrl": "https://github.com/ryan25r9/cortex-chat-visual/issues",
-    "gitHubUrl": "https://github.com/ryan25r9/cortex-chat-visual"
+    "supportUrl": "https://github.com/ryan25r9/power-bi-custom-visual-snowflake-cortex/issues",
+    "gitHubUrl": "https://github.com/ryan25r9/power-bi-custom-visual-snowflake-cortex"
   },
   "apiVersion": "5.11.0",
   "author": { "name": "Ryan", "email": "ryan25r9@gmail.com" },

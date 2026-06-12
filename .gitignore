@@ -8,6 +8,8 @@ node_modules/
 dist/
 .tmp/
 *.pbiviz
+tests/build/
+visual/webpack.statistics.*.html
 
 # Secrets / local config (NEVER commit real credentials)
 local.settings.json

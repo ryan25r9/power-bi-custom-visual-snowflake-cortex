@@ -24,10 +24,29 @@ Three parallel subagents (package build / proxy E2E / unit tests) with non-overl
 
 ## Rerun everything
 ```
-bash tests/run-tests.sh        # 18 unit tests
-bash tools/run-e2e.sh          # mock-Snowflake streaming E2E
+bash tests/run-tests.sh        # 28 unit tests
+bash tools/run-e2e.sh          # mock-Snowflake streaming E2E (15-event stream)
 cd visual && ./node_modules/.bin/pbiviz package   # rebuild artifact
 ```
+
+## 2026-06-12 review pass (API drift + security + gaps)
+Full review against live Snowflake/Microsoft docs (42-agent workflow, findings adversarially
+verified, load-bearing claims re-checked by hand). All three gates green after every step.
+
+| Change | Why | Verified by |
+|---|---|---|
+| `system_execute_sql` tool blocks parsed (legacy type kept) | Snowflake release note 2026-04-13 renamed the response-stream block type; agent-spec type in `CREATE AGENT` unchanged | mock flipped to new type; test 14 updated; test 19 pins legacy back-compat |
+| vega-embed 6.26 → **7.1.0** + `ast: true` | untrusted agent specs previously hit vega's `Function()` expression fallback; interpreter (vega-interpreter 2.2.1) evaluates instead | bundle probed for interpreter; vega-tooltip 1.0 escapeHTML default confirmed; tsconfig → `moduleResolution: bundler` (vega-embed 7 is ESM-only) |
+| Proxy: constant-time key compare; generic upstream error detail | timing side-channel; Snowflake error bodies leak internals | e2e checks b/e/f |
+| `storageService` → `storageV2Service` | removed in api 5.11.0 — key persistence silently no-oped | typed against installed d.ts; session-only placeholder when storage disabled |
+| `options.jsonFilters` typed (cast removed) | typed on VisualUpdateOptions since api 2.2.0 | pbiviz compile |
+| Prompt-injection framing (contextBuilder + setup.sql instructions) | untrusted cell values flow into the prompt; soft mitigation, hard boundary = read-only role | test 7b |
+| New SSE events: `response.warning` / `.text.annotation` / `.chart` / `.table` | documented events were silently dropped | mock 11 → 15 events; tests 20-23; e2e count updated |
+| Stop button + Escape; retry w/ backoff (`streamAgentWithRetry`); Rendering Events | gap features (user-selected) | tests 24-27 (never retries after delivery / on AUTH / past cap); pbiviz lint clean |
+| Deps: formattingmodel 6.2.2, @azure/functions 4.16.0, typescript 5.9.3 | conservative floors; vega/vega-lite 5.x + tools 6.x deliberately held (see CLAUDE.md watch list) | all gates |
+| Housekeeping: sandbox leftovers removed, real repo URLs in pbiviz.json | — | — |
+
+Still never run against a live Snowflake account or real Power BI tenant.
 
 ## Not verifiable from here (your ~30 min)
 1. `snowflake/setup.sql` in Snowsight (edit placeholders; copy the PAT it prints).

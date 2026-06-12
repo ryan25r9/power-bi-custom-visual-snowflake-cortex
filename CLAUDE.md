@@ -29,33 +29,30 @@ All three must stay green after any change. Tests + mock encode the Snowflake SS
 `cortex_analyst_text_to_sql` still parsed) — if you change parsing, update mock + tests together.
 
 ## Verified already (don't re-prove; do challenge if you find drift)
-Packaged .pbiviz (api 5.11.0, tools 6.2.0) with vega bundled; true incremental streaming through the
-proxy; chunk-boundary-safe SSE parsing; fail-closed empty-key auth; CSV escaping/truncation. Two bugs
-already found+fixed: findVegaSpec precedence, TextDecoder flush.
+Packaged .pbiviz (api 5.11.0, tools 6.x) with vega bundled; true incremental streaming through the
+proxy; chunk-boundary-safe SSE parsing; fail-closed empty-key auth (constant-time compare); CSV
+escaping/truncation. Bugs found+fixed: findVegaSpec precedence, TextDecoder flush. 2026-06-12 review
+(verified against live docs): `system_execute_sql` replaced `cortex_analyst_text_to_sql` in response
+streams Apr 2026 (agent-spec type unchanged — setup.sql is correct); CREATE AGENT / PAT / endpoint
+syntax current; `acquireAADToken` still AppSource-only (README §7 stands); vega-embed 7.1.0 renders
+untrusted specs through vega-interpreter (`ast: true`); key storage uses storageV2Service
+(storageService was removed in api 5.11.0); `options.jsonFilters` is properly typed (cast removed);
+retry wrapper (streamAgentWithRetry) never retries after first delivery or on AUTH; Rendering Events
+wired in update().
 
-## Review priorities (in order)
-1. **API drift vs. current docs.** Snowflake Cortex Agents Run API event types/payloads
-   (docs.snowflake.com /user-guide/snowflake-cortex/cortex-agents-run), threads API, PAT semantics,
-   `CREATE AGENT` spec syntax in setup.sql. Power BI: latest powerbi-visuals-api/tools versions;
-   whether the Authentication API (`acquireAADToken`, AADAuthentication privilege) STILL excludes
-   private/org visuals — if that changed, it unlocks proper SSO and §7 of README should be reworked.
-2. **Security.** Shared-key model; CORS `"*"` branch for null-Origin (Desktop) — no credentials used,
-   but review; visual stores key via storageService (admin switch may disable → memory fallback);
-   prompt-injection surface: untrusted cell values flow into the agent prompt (REPORT CONTEXT block);
-   vega-embed renders agent-supplied specs — assess vega expression risk, consider `ast: true` /
-   expression interpreter or spec sanitization; XSS posture (all text via textContent — keep it that way).
-3. **Dependency updates.** `npm outdated` in visual/ and proxy/; vega/vega-lite/vega-embed majors;
-   @azure/functions; typescript. Bump conservatively; pbiviz package must still succeed.
-4. **Gaps worth implementing.** Stop/cancel button (AbortController already wired); fetchMoreData for
-   >1000-row dataViews; Snowflake threads instead of resending history; Rendering Events API
-   (pbiviz suggests it); markdown rendering of answers (currently plain text); `response.text.annotation`
-   citations; retry/backoff on transient proxy failures.
-5. **Known wobbly spot:** `(options as any).jsonFilters` in visual.ts — verify against current
-   VisualUpdateOptions typings and the declared `general.filter` object in capabilities.json; fix typing
-   or remove the cast.
+## Watch list (re-check on future reviews)
+1. vega/vega-lite stay on 5.x until Snowflake `data_to_chart` output confirms vega-lite v6 `$schema`;
+   bump both majors together (mock + findVegaSpec assume v5 today). powerbi-visuals-tools 7.x is a
+   webpack/Node-polyfill major — needs a dedicated pass.
+2. `acquireAADToken` / AADAuthentication eligibility for organizational visuals — if Microsoft ever
+   lifts the AppSource-only restriction, rework README §7 (proper SSO, drop shared key).
+3. Threads API v2: pass `thread_id`/`parent_message_id` on the existing `:run` endpoint instead of
+   resending history; the `metadata` event carries the ids (currently ignored).
+4. Prompt injection is mitigated (untrusted-data framing both ends, read-only role), not solved —
+   keep the agent role SELECT-only; revisit if tools gain write capability.
+5. Markdown rendering of answers stays deferred: it would trade away the textContent-only XSS posture.
 
 ## Constraints
 - Certified-visual rules forbid web access — this visual is intentionally uncertified/organizational; don't "fix" that.
 - No secrets in format-pane settings or pbix; key stays in localStorage/memory, Snowflake creds stay in the proxy.
-- `pbiviz.json` supportUrl/gitHubUrl are placeholders (github.com/ryan25r9/cortex-chat-visual) — update if a real repo exists.
-- Sandbox leftovers safe to delete in a real checkout: `visual/tsconfig.check.json`, `visual/webpack.statistics.prod.html`, `tests/build/`.
+- `capabilities.json` WebAccess privilege URL is still a placeholder — must match the deployed proxy host.
