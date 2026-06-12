@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# post-commit — safety-net auto-push.
+#
+# Pushes `main` to origin after every commit on `main`, so a commit can never
+# strand locally (e.g. if a session ends right after committing). Normal,
+# non-forced push only — it never rewrites remote history.
+#
+# Deliberately narrow + best-effort:
+#   • only fires on `main` (feature/chore branches push themselves)
+#   • skips mid-merge/rebase/cherry-pick sequences
+#   • skips when sync.sh is driving (it manages its own PR push)
+#   • a failed push (offline, non-fast-forward after an amend) just warns —
+#     your commit is safe locally and syncs on the next push.
+#
+# Activated via `core.hooksPath=.githooks` (run ./setup-hooks.sh once per clone).
+
+# Hooks run with GIT_DIR/GIT_INDEX_FILE exported, which confuses sub-commands.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
+# sync.sh commits on main internally before moving the work to a PR branch;
+# don't hijack that commit with a direct push.
+[ "${SKIP_AUTO_PUSH:-}" = "1" ] && exit 0
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT" || exit 0
+
+branch="$(git symbolic-ref --short -q HEAD)"
+[ "$branch" = "main" ] || exit 0    # only auto-push main; skip detached HEAD / other branches
+
+# Don't fire while a merge/rebase/cherry-pick is still in progress.
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then exit 0; fi
+GITDIR="$(git rev-parse --git-dir 2>/dev/null)"
+[ -d "$GITDIR/rebase-merge" ] && exit 0
+[ -d "$GITDIR/rebase-apply" ] && exit 0
+
+# Nothing new relative to origin/main? Then there's nothing to push.
+if git rev-parse -q --verify origin/main >/dev/null 2>&1; then
+  [ "$(git rev-list --count origin/main..HEAD 2>/dev/null)" = "0" ] && exit 0
+fi
+
+echo "[post-commit] auto-pushing main -> origin…"
+if git push --quiet origin main 2>/dev/null; then
+  echo "[post-commit] ✓ pushed to origin/main"
+else
+  echo "[post-commit] ⚠ push failed (offline / needs manual push) — will sync on the next push."
+fi
+exit 0

@@ -16,6 +16,10 @@
 set -e
 cd "$(dirname "$0")"
 
+# Tell the post-commit hook to stand down — sync.sh drives its own PR push and
+# must not have its internal main-commit hijacked by a direct auto-push.
+export SKIP_AUTO_PUSH=1
+
 PUSH=true
 MSG=""
 
