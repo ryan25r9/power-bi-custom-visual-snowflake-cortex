@@ -1,0 +1,43 @@
+name: Auto-merge Claude PRs
+
+# Belt-and-suspenders for PRs opened by scheduled-task / Claude agent runs.
+# Any PR whose head branch starts with `claude/` or `briefs/` gets converted
+# from draft (if applicable) and squash-auto-merged with branch deletion.
+#
+# This is a backstop. sync.sh also calls `gh pr merge --squash --auto --delete-branch`
+# as its last step, but if a run crashes before that step OR a runtime
+# leaves an unmerged draft behind, this workflow catches it.
+#
+# Non-matching PRs (feat/*, fix/*, chore/*, etc.) are untouched and follow the
+# normal flow with the protect_main ruleset.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  auto-merge:
+    if: >
+      startsWith(github.head_ref, 'claude/') ||
+      startsWith(github.head_ref, 'briefs/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark ready (if draft)
+        if: github.event.pull_request.draft == true
+        run: gh pr ready "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Squash-merge (auto if available, else immediate)
+        # Native auto-merge needs a public repo or a paid plan; this repo is
+        # private/free, so fall back to an immediate squash-merge when --auto
+        # is unavailable. Works identically once the repo goes public/Pro.
+        run: gh pr merge --squash --auto --delete-branch "$PR_URL" || gh pr merge --squash --delete-branch "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
