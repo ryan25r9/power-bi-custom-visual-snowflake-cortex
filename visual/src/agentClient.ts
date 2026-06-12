@@ -133,7 +133,7 @@ export async function streamAgentWithRetry(
             cb.onError(failure);
             return;
         }
-        await abortableSleep(baseDelayMs * 2 ** attempt + Math.random() * 250, signal);
+        await abortableSleep(baseDelayMs * 2 ** attempt + jitterMs(250), signal);
         if (signal.aborted) return;
     }
 }
@@ -144,6 +144,11 @@ function isTransient(err: string): boolean {
     if (err.startsWith("Could not reach proxy.")) return true; // network-level fetch failure
     const m = /^Proxy error (\d+):/.exec(err);                 // pre-stream HTTP failure
     return m ? [429, 502, 503, 504].includes(Number(m[1])) : false;
+}
+
+/** 0..max ms of jitter (crypto API keeps the pbiviz insecure-random lint clean). */
+function jitterMs(max: number): number {
+    return crypto.getRandomValues(new Uint32Array(1))[0] % max;
 }
 
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {

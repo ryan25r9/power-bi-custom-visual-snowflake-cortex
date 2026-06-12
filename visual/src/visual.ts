@@ -57,15 +57,25 @@ export class Visual implements IVisual {
     }
 
     public update(options: VisualUpdateOptions): void {
-        this.settings = this.fmtService.populateFormattingSettingsModel(
-            VisualFormattingSettingsModel, options.dataViews?.[0]);
-        this.dataView = options.dataViews?.[0];
-        this.jsonFilters = options.jsonFilters; // filters applied to this visual, when host supplies them
-        this.refreshContextChip();
+        // Rendering events make exports (PDF/PowerPoint) wait for the visual. They bracket
+        // the synchronous DataView render only — never the async chat stream.
+        const events = this.host.eventService;
+        events?.renderingStarted(options);
+        try {
+            this.settings = this.fmtService.populateFormattingSettingsModel(
+                VisualFormattingSettingsModel, options.dataViews?.[0]);
+            this.dataView = options.dataViews?.[0];
+            this.jsonFilters = options.jsonFilters; // filters applied to this visual, when host supplies them
+            this.refreshContextChip();
 
-        const url = this.settings.agentCard.proxyUrl.value?.trim();
-        this.setStatus(url ? "" : "Set the Proxy URL in Format ➜ Cortex Agent to begin.");
-        this.sendBtn.disabled = !url || this.busy;
+            const url = this.settings.agentCard.proxyUrl.value?.trim();
+            this.setStatus(url ? "" : "Set the Proxy URL in Format ➜ Cortex Agent to begin.");
+            this.sendBtn.disabled = !url || this.busy;
+            events?.renderingFinished(options);
+        } catch (e) {
+            events?.renderingFailed(options, String(e));
+            throw e;
+        }
     }
 
     public getFormattingModel(): powerbi.visuals.FormattingModel {
