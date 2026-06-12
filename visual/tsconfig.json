@@ -6,7 +6,8 @@
     "target": "ES2022",
     "sourceMap": true,
     "outDir": "./.tmp/build/",
-    "moduleResolution": "node",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "declaration": true,
     "strict": false,
     "lib": ["ES2022", "DOM"]

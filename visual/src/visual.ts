@@ -207,7 +207,9 @@ export class Visual implements IVisual {
     private renderChart(spec: object): void {
         const box = el("div", "cc-chart", this.messagesEl);
         const width = Math.max(220, this.messagesEl.clientWidth - 60);
-        vegaEmbed(box, { width, height: 200, ...(spec as any) }, { actions: false, renderer: "svg" })
+        // ast:true -> vega-interpreter evaluates spec expressions (no Function());
+        // specs are agent-supplied and untrusted, so never render without it.
+        vegaEmbed(box, { width, height: 200, ...(spec as any) }, { actions: false, renderer: "svg", ast: true })
             .then(() => this.scrollDown())
             .catch(() => {
                 box.classList.add("cc-chart-fallback");
