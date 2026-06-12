@@ -1,0 +1,22 @@
+{
+  "name": "cortex-agent-proxy",
+  "version": "1.0.0",
+  "description": "SSE relay: Power BI custom visual -> Snowflake Cortex Agents API",
+  "main": "dist/src/functions/*.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prestart": "npm run build",
+    "start": "func start",
+    "deploy": "npm run build && func azure functionapp publish $FUNC_APP_NAME"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.5.4"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "SNOWFLAKE_ACCOUNT_URL": "https://<org>-<account>.snowflakecomputing.com",
+    "SNOWFLAKE_PAT": "<service-user programmatic access token>",
+    "AGENT_DATABASE": "AI_DB",
+    "AGENT_SCHEMA": "AGENTS",
+    "AGENT_NAME": "REPORT_CHAT_AGENT",
+    "PROXY_API_KEY": "<generate a long random string>",
+    "ALLOWED_ORIGINS": "https://app.powerbi.com"
+  }
+}

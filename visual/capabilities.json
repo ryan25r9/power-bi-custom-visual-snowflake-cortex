@@ -1,0 +1,49 @@
+{
+  "dataRoles": [
+    {
+      "displayName": "Context fields",
+      "name": "contextFields",
+      "kind": "GroupingOrMeasure",
+      "description": "Whatever you bind here is what the agent 'sees'. Add the dimensions and measures that define this page's story. Data arrives already filtered by all active slicers/filters."
+    }
+  ],
+  "dataViewMappings": [
+    {
+      "table": {
+        "rows": {
+          "select": [{ "for": { "in": "contextFields" } }],
+          "dataReductionAlgorithm": { "window": { "count": 1000 } }
+        }
+      }
+    }
+  ],
+  "objects": {
+    "agent": {
+      "properties": {
+        "proxyUrl": { "type": { "text": true } },
+        "includeContext": { "type": { "bool": true } },
+        "maxContextRows": { "type": { "numeric": true } },
+        "agentHint": { "type": { "text": true } }
+      }
+    },
+    "general": {
+      "properties": {
+        "filter": { "type": { "filter": true } }
+      }
+    }
+  },
+  "privileges": [
+    {
+      "name": "WebAccess",
+      "essential": true,
+      "parameters": ["https://YOUR-PROXY.azurewebsites.net"]
+    },
+    {
+      "name": "LocalStorage",
+      "essential": false
+    }
+  ],
+  "supportsEmptyDataView": true,
+  "supportsLandingPage": true,
+  "suppressDefaultTitle": true
+}

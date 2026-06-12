@@ -1,0 +1,21 @@
+{
+  "name": "snowflake-cortex-chat-visual",
+  "version": "1.0.0",
+  "description": "Power BI custom visual: chat with a Snowflake Cortex Agent in report-filter context",
+  "scripts": {
+    "start": "pbiviz start",
+    "package": "pbiviz package",
+    "audit": "pbiviz package --resources --no-pbiviz"
+  },
+  "dependencies": {
+    "powerbi-visuals-api": "~5.11.0",
+    "powerbi-visuals-utils-formattingmodel": "^6.0.4",
+    "vega": "^5.30.0",
+    "vega-embed": "^6.26.0",
+    "vega-lite": "^5.21.0"
+  },
+  "devDependencies": {
+    "powerbi-visuals-tools": "^6.1.3",
+    "typescript": "^5.5.4"
+  }
+}

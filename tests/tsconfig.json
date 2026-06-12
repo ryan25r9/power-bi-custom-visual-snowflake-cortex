@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+        "module": "es2022",
+        "target": "ES2022",
+        "moduleResolution": "node",
+        "outDir": "./build",
+        "rootDir": "../visual/src",
+        "skipLibCheck": true,
+        "strict": false,
+        "types": [],
+        "typeRoots": [],
+        "lib": ["ES2022", "DOM"]
+    },
+    "files": [
+        "../visual/src/contextBuilder.ts",
+        "../visual/src/agentClient.ts"
+    ]
+}
