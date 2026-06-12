@@ -45,6 +45,7 @@ export class Visual implements IVisual {
     private messagesEl: HTMLElement;
     private inputEl: HTMLTextAreaElement;
     private sendBtn: HTMLButtonElement;
+    private stopBtn: HTMLButtonElement;
     private keyRow: HTMLElement;
     private keyInput: HTMLInputElement;
 
@@ -84,6 +85,7 @@ export class Visual implements IVisual {
 
         this.busy = true;
         this.sendBtn.disabled = true;
+        this.stopBtn.style.display = "";
         this.inputEl.value = "";
         this.addBubble("user", question);
 
@@ -130,6 +132,7 @@ export class Visual implements IVisual {
         this.setStatus("");
         this.busy = false;
         this.sendBtn.disabled = false;
+        this.stopBtn.style.display = "none";
         this.scrollDown();
     }
 
@@ -201,6 +204,15 @@ export class Visual implements IVisual {
         this.sendBtn = el("button", "cc-btn cc-send", inputRow) as HTMLButtonElement;
         this.sendBtn.textContent = "Send";
         this.sendBtn.onclick = () => this.send();
+
+        this.stopBtn = el("button", "cc-btn cc-stop", inputRow) as HTMLButtonElement;
+        this.stopBtn.textContent = "Stop";
+        this.stopBtn.style.display = "none";
+        this.stopBtn.onclick = () => this.abort?.abort();
+        // Escape anywhere in the visual cancels the in-flight request too.
+        this.root.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") this.abort?.abort();
+        });
     }
 
     private addBubble(role: "user" | "assistant", text: string): HTMLElement {
