@@ -90,6 +90,7 @@ Common failures at this step:
 | Response | Meaning |
 |---|---|
 | 390303 "Invalid OAuth access token" | The token string is wrong (placeholder left in, partial copy, expired/revoked PAT), or the token-type header above is missing |
+| 399513 "agent does not exist or access is not authorized for the current role" | Auth worked; the session's role can't see the agent. PAT sessions run under the token's role restriction, or the user's DEFAULT_ROLE if none was set. Regenerate the token with the role restriction set to a role that has USAGE on the database, the schema, and the agent (restrictions can't be edited after creation) |
 | 401 invalid token | PAT copied wrong, expired, or the user's network policy blocks your IP |
 | 403 | The service user's role is missing USAGE on the agent |
 | 404 | Database/schema/agent name typo in the URL |
