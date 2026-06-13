@@ -45,11 +45,19 @@ Snowflake admin - it's pre-filled with the right names and creates:
 - a service user (`SVC_PBI_CORTEX_CHAT`) with that role and warehouse as defaults
 - a network policy and a programmatic access token (PAT)
 
-Two things to know about the PAT:
+Things to know about the PAT:
 
 - It's printed **once** when created. Whoever runs the script must copy it
   immediately and hand it to you through a secure channel (not email).
 - It expires in 90 days by default. Put a reminder somewhere to rotate it.
+- There's also a UI for it: Snowsight > Governance & security > Users & roles >
+  select the user > Programmatic access tokens > Generate new token. For a
+  service user the role restriction is required; set it to `PBI_CORTEX_CHAT_ROLE`.
+- For a quick personal test before the service user exists, you can generate a
+  PAT for your own user the same way (set the role restriction to the role you
+  use to access the agent). Using a PAT requires your user to be under a network
+  policy, so run the smoke test from the corporate network/VPN. Don't deploy the
+  proxy with a personal token; it carries your access and your expiry.
 
 (If you ever need to stand up an agent from nothing, that's what
 [`snowflake/setup.sql`](snowflake/setup.sql) is for. Skip it here.)
