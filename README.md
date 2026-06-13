@@ -1,136 +1,122 @@
-# Snowflake Cortex Chat — Power BI Custom Visual
+# Snowflake Cortex Chat for Power BI
 
-A chat window that lives **inside** a Power BI report, talks to a **Snowflake Cortex Agent**, and automatically includes the report's current filter context with every question.
+A chat window that lives inside a Power BI report and talks to a Snowflake Cortex
+agent. Every question automatically includes what the user is currently looking
+at: the fields bound to the visual, filtered by whatever slicers and filters are
+active on the page.
 
 ```
 ┌─ Power BI report ────────────┐      ┌─ Azure Function ─┐      ┌─ Snowflake ────────────┐
 │  ┌─ Cortex Chat visual ───┐  │ SSE  │  agentProxy      │ SSE  │  agent:run             │
-│  │ chat UI                │◄─┼──────┤  • CORS          │◄─────┤  REPORT_CHAT_AGENT     │
-│  │ + filtered DataView ───┼──┼─────►│  • holds PAT     ├─────►│  • Cortex Analyst      │
-│  └────────────────────────┘  │ POST │  • relays stream │      │  • semantic view       │
+│  │ chat UI                │◄─┼──────┤  - CORS          │◄─────┤  Cortex agent          │
+│  │ + filtered DataView ───┼──┼─────►│  - holds PAT     ├─────►│  - text-to-SQL tool    │
+│  └────────────────────────┘  │ POST │  - relays stream │      │  - semantic view       │
 └──────────────────────────────┘      └──────────────────┘      └────────────────────────┘
 ```
 
-**How "context" works (the key intuition):** a custom visual receives whatever fields the report author drags into its field wells — *already filtered* by every active slicer, filter, and cross-highlight. The visual serializes that view (schema + capped rows + active filters) into the prompt. The agent literally sees what the user sees. It cannot see fields you don't bind.
+**Setting it up?** Follow [SETUP.md](SETUP.md). It's a step-by-step runbook and
+assumes no familiarity with this codebase.
+
+## How the context works
+
+Power BI hands a custom visual whatever fields the report author drags into its
+field wells, already filtered by every active slicer, filter, and cross-highlight.
+Before each question, the visual serializes that data (field names, up to 200 rows
+as CSV, plus the active filter definitions) into a `REPORT CONTEXT` block at the
+top of the prompt. The agent sees what the user sees, and nothing else: fields that
+aren't bound to the visual are invisible to it.
+
+The chat renders more than text. Tool calls show up as a muted activity trail,
+generated SQL lands in a collapsible "SQL used" block so analysts can audit
+answers, charts the agent produces render inline (Vega-Lite via vega-embed), and
+result tables render as actual tables. There's a Stop button for runaway answers,
+and transient network failures retry automatically with backoff.
 
 ## Repo layout
 
 | Path | What it is |
 |---|---|
-| `visual/` | The .pbiviz project — **prebuilt artifact in `visual/dist/`** |
-| `proxy/` | Azure Function — CORS + secrets + SSE relay |
-| `snowflake/setup.sql` | Role, warehouse, agent, service user, PAT |
-| `deploy.sh` | One-command Azure deploy (fill the EDIT THESE block) |
-| `tests/`, `tools/` | 18 unit tests + mock-Snowflake streaming E2E (`bash tests/run-tests.sh`, `bash tools/run-e2e.sh`) |
-| `PLAN.md` | Build/verification log — what was tested and how |
+| `visual/` | The Power BI visual (pbiviz project). Build output goes to `visual/dist/` |
+| `visual/src/visual.ts` | UI and orchestration: chat bubbles, charts, tables, the key prompt |
+| `visual/src/agentClient.ts` | SSE client: parses the agent's event stream, retry logic |
+| `visual/src/contextBuilder.ts` | Turns the DataView into the REPORT CONTEXT prompt block |
+| `visual/src/settings.ts` | The Format-pane settings (proxy URL, row cap, report description) |
+| `proxy/src/functions/agentProxy.ts` | Azure Function: auth, CORS, SSE relay. The only place Snowflake credentials live |
+| `snowflake/grant-existing-agent.sql` | Wire a service user + PAT to an agent that already exists |
+| `snowflake/setup.sql` | Full from-scratch setup: role, warehouse, agent, service user, PAT |
+| `deploy.sh` | One-command Azure deploy. Fill in the EDIT THESE block first |
+| `tests/`, `tools/` | 28 unit tests and a streaming end-to-end test against a mock Snowflake |
+| `PLAN.md` | Build and review log: what was verified and how |
 
-**Build status:** packaged .pbiviz verified, proxy streaming proven live against a mock Snowflake (6/6), visual logic 18/18 unit tests. Chat renders streamed text, a tool-activity trail, a collapsible "SQL used" audit block, and inline Vega-Lite charts from `data_to_chart`.
-
----
-
-## Phase 0 — Prerequisites (½ day)
-
-1. Node.js 20+, plus [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local) (`npm i -g azure-functions-core-tools@4`).
-2. Snowflake: `ACCOUNTADMIN` (or delegated) access; a **semantic view** over your reporting tables — this is 80% of answer quality. Build it in Snowsight ▸ AI & ML ▸ Studio.
-3. Power BI: enable **Developer mode** (Fabric: User settings ▸ Developer settings ▸ Power BI Developer mode) so `pbiviz start` live-reloads in the Service.
-4. Tenant admin: confirm SDK/uncertified visuals aren't blocked (Fabric Admin portal ▸ Tenant settings ▸ "Visuals created by the Power BI SDK").
-
-## Phase 1 — Snowflake (1–2 hrs)
-
-1. Edit the `<placeholders>` in `snowflake/setup.sql` (semantic view name, data grants).
-2. Run it. Copy the PAT it prints — shown once.
-3. Run the smoke-test `curl` at the bottom of the file. You should see `event: response.status` / `response.text.delta` lines stream back. Don't proceed until this works.
-
-> Agents run under the calling user's **default role and default warehouse** — that's why the script sets both on `SVC_PBI_CORTEX_CHAT`.
-
-## Phase 2 — Proxy (½ day)
+After any code change, these three must pass (see CLAUDE.md if you're using an AI
+coding tool against this repo):
 
 ```bash
-cd proxy
-npm install
-cp local.settings.json.example local.settings.json   # fill in values
-npm start                                            # http://localhost:7071/api/agent
+bash tests/run-tests.sh
+bash tools/run-e2e.sh
+(cd visual && npx pbiviz package)
 ```
 
-Test locally:
+## Design notes
 
-```bash
-curl -N -X POST http://localhost:7071/api/agent \
-  -H "Content-Type: application/json" -H "x-proxy-key: <your PROXY_API_KEY>" \
-  -d '{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}'
-```
+- **Context rides the latest turn only.** Older turns are resent without their
+  context blocks to keep token costs down. Each new question carries fresh
+  context, so slicer changes between questions are picked up.
+- **1000-row DataView window, 200-row prompt cap.** Both deliberate. Bind
+  aggregated fields, not raw fact tables: the goal is the story of the page, not a
+  data dump. The row cap is adjustable in the Format pane.
+- **The proxy is stateless.** Full message history travels with each call. If
+  histories get long, the upgrade path is Snowflake threads: pass `thread_id` and
+  `parent_message_id` on the same `:run` endpoint and send only the new message.
+  The `metadata` event carries the IDs; the client currently ignores it.
+- **Untrusted input is treated as such.** Cell values go into the prompt, so the
+  context block and the agent's instructions both state that report data is data,
+  not instructions. Agent-supplied Vega-Lite specs render with `ast: true`, which
+  evaluates spec expressions in an interpreter instead of compiling them to
+  JavaScript. All text reaches the DOM through `textContent` (never `innerHTML`),
+  including the rendered tables. Keep it that way.
+- **SQL tool blocks stream as `system_execute_sql`** since Snowflake's April 2026
+  change. The old `cortex_analyst_text_to_sql` type is still parsed for
+  compatibility, and it remains the correct tool type inside the agent
+  *definition* (only the response stream renamed).
 
-Deploy — **easiest: fill in the EDIT THESE block in `../deploy.sh` and run it** (creates everything below, prints your proxy URL + access key). Manual equivalent:
+## Security model
 
-```bash
-az group create -n rg-cortex-chat -l eastus2
-az functionapp create -g rg-cortex-chat -n <FUNC_APP_NAME> \
-  --flexconsumption-location eastus2 --runtime node --runtime-version 20 \
-  --storage-account <newstorageacct>
-az functionapp config appsettings set -g rg-cortex-chat -n <FUNC_APP_NAME> --settings \
-  SNOWFLAKE_ACCOUNT_URL=... SNOWFLAKE_PAT=... AGENT_DATABASE=AI_DB \
-  AGENT_SCHEMA=AGENTS AGENT_NAME=REPORT_CHAT_AGENT \
-  PROXY_API_KEY=... ALLOWED_ORIGINS=https://app.powerbi.com
-cd proxy && npm run build && func azure functionapp publish <FUNC_APP_NAME>
-```
-
-Then tighten the Snowflake network policy in `setup.sql` to the Function's outbound IPs, and move `SNOWFLAKE_PAT` into Key Vault references when convenient.
-
-## Phase 3 — The visual (1–2 days incl. polish)
-
-```bash
-cd visual
-npm install
-```
-
-1. **Edit `capabilities.json`** → replace `https://YOUR-PROXY.azurewebsites.net` in the `WebAccess` privilege with your Function host. Calls to undeclared hosts are blocked by Power BI.
-2. Dev loop: `npx pbiviz start`, open a report in the Service, add the **Developer visual** from the visualizations pane.
-3. In the visual's **Format ▸ Cortex Agent** pane set: Proxy URL (`https://<FUNC_APP_NAME>.azurewebsites.net/api/agent`), optional report description.
-4. First question will prompt for the **access key** → paste `PROXY_API_KEY` (stored per-user via the LocalStorage API, never in the .pbix).
-5. **Bind context**: drag the page's key dimensions/measures into **Context fields**. Watch the header chip ("context: 5 fields · 312 rows"). Move a slicer — the chip updates; that's the context the agent gets.
-6. Package: `npx pbiviz package` → `dist/*.pbiviz`.
-
-## Phase 4 — Distribute (1 hr + admin)
-
-- Quick: Report ▸ Get more visuals ▸ **Import from file**.
-- Right way: Fabric Admin portal ▸ **Organizational visuals** ▸ upload the .pbiviz. Everyone gets it from "My organization", updates centrally.
-
-## Phase 5 — Verify end-to-end
-
-Slice the report to one region → ask "what's driving the numbers I'm seeing?" → answer should reference only the sliced data. Clear filters → ask again → broader answer. Ask something beyond the bound fields → agent should fall back to Cortex Analyst (watch the status line: "Planning the next steps…").
-
----
-
-## §6 Design decisions worth knowing
-
-- **Context only on the latest turn.** Older turns are sent context-free to keep token costs sane; the agent re-receives fresh context (post-slicer-change) each question.
-- **1000-row dataView window, 200-row prompt cap** (format pane). Bind aggregated fields, not raw fact rows — you want the *story* of the page, not the warehouse.
-- **Stateless proxy.** Full message history travels each call. Swap to Snowflake **threads** (`/api/v2/cortex/threads`) later if histories get long.
-- **Tool events render, not just text.** `tool_use` → activity trail line; analyst `tool_result` → collapsible "SQL used" block (auditability for BI users); `data_to_chart` results → inline Vega-Lite charts via vega-embed (raw-spec fallback if a spec won't render). Unknown event types are still ignored safely.
-
-## §7 Security: POC → production
-
-| Layer | POC (this scaffold) | Production |
+| Layer | Today (pilot) | Production upgrade |
 |---|---|---|
-| Visual → proxy | Shared key, per-user localStorage | Entra ID JWT. Private visuals **can't** use Power BI's `acquireAADToken` SSO API (AppSource-only), so: `launchUrl()` OAuth popup flow, or publish to AppSource |
-| Proxy → Snowflake | One service-user PAT (RBAC = that role for everyone) | **External OAuth security integration with Entra ID**; proxy forwards per-user tokens → Snowflake RBAC + row access policies apply per person |
-| Network | Open network policy | Pin Snowflake network policy to Function egress IPs; Function behind APIM if desired |
+| Visual to proxy | Shared key in an `x-proxy-key` header, stored per user via the visual storage API. Constant-time comparison, fails closed if unset | Entra ID JWT validation in the proxy. Note: private visuals cannot use Power BI's `acquireAADToken` SSO API (AppSource visuals only, still true as of mid-2026), so the realistic path is a `launchUrl()` OAuth popup or AppSource publication |
+| Proxy to Snowflake | One service-user PAT held in Function app settings. Everyone shares that role's access | External OAuth integration with Entra ID; proxy forwards per-user tokens so Snowflake RBAC and row access policies apply per person |
+| Network | Snowflake network policy open by default in the scripts | Pin the policy to the Function's outbound IPs; put the PAT behind a Key Vault reference |
 
-## §8 Troubleshooting
+Things the proxy does on purpose: Snowflake error bodies are logged server-side
+but never relayed to the browser (they can reveal account internals), and the
+CORS wildcard only applies to origin-less clients like Power BI Desktop, where
+CORS isn't enforceable anyway.
+
+## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| "Could not reach proxy" | Proxy URL host not in `WebAccess` parameters (repackage), or CORS — check `ALLOWED_ORIGINS` |
-| Works in Desktop, not Service | Tenant blocks uncertified visuals → deploy as organizational visual |
-| 401 from proxy | `x-proxy-key` mismatch; re-enter key (it's per-user, per-device) |
-| `snowflake_error` 401/403 | PAT expired (90d), network policy blocks Function IP, or role lacks `USAGE` on agent |
-| Response never streams, arrives all at once | Hosting plan buffers responses — use Flex Consumption, or accept buffered (it still works) |
-| Empty/odd answers | Check the context chip — are the right fields bound? Is the semantic view good? |
-| `pbiviz start` cert errors | `npx pbiviz install-cert` once |
+| "Could not reach proxy" | The Function host isn't in the visual's `WebAccess` privilege (edit `capabilities.json`, repackage, reimport), or CORS: check `ALLOWED_ORIGINS` on the Function App |
+| Works in Desktop, not in the Service | Tenant blocks SDK visuals. Distribute through Organizational visuals instead of file import |
+| 401 from the proxy | Key mismatch. Re-enter the access key (it's stored per user, per browser) |
+| `snowflake_error` with 401/403 | PAT expired (90-day default), the network policy blocks the Function's IP, or the service role lost USAGE on the agent. Details are in the Function's logs, not the browser |
+| Answer arrives all at once instead of streaming | The hosting plan buffers responses. Flex Consumption streams; other plans may not. Functionally it still works |
+| Empty or vague answers | Look at the context chip. Are the right fields bound? Is the row cap eating the data? Is the semantic view any good? |
+| Charts don't render, raw JSON shows instead | The spec failed validation or used expressions the interpreter rejects. The raw spec is shown on purpose so you can see what the agent sent |
+| `pbiviz` certificate errors on `pbiviz start` | `npx pbiviz install-cert`, once per machine |
 
-## §9 Honest limitations
+## Known limitations
 
-- This visual can't read *other visuals'* internals — only fields bound to it (filters/slicers still apply globally, which covers most "what am I looking at" intent).
-- Certification is impossible by design (certified visuals can't make web calls) — org-visual distribution is the intended path.
-- Power BI may unload/reload the visual on page switches; chat history is in-memory per session by design.
-- Agent calls time out at 15 min on Snowflake's side; the visual's Send button locks per in-flight question.
+- The visual can only see fields bound to it. It can't read other visuals on the
+  page, though page-level filters and slicers affect its data like any other
+  visual, which covers most "what am I looking at" questions.
+- It can't be a certified visual: certification forbids web access, and calling
+  the proxy is the whole point. Organizational-visual distribution is the
+  intended path.
+- Chat history lives in memory for the session. Power BI may unload the visual on
+  page switches, which clears it. The access key survives (browser storage); if a
+  tenant admin disables visual storage, the key becomes session-only and the
+  input placeholder says so.
+- One question at a time per visual: Send locks while a request is in flight.
+  Stop (or Escape) cancels it.

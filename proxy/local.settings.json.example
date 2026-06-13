@@ -4,12 +4,12 @@
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
 
-    "SNOWFLAKE_ACCOUNT_URL": "https://<org>-<account>.snowflakecomputing.com",
-    "SNOWFLAKE_PAT": "<service-user programmatic access token>",
-    "AGENT_DATABASE": "AI_DB",
-    "AGENT_SCHEMA": "AGENTS",
-    "AGENT_NAME": "REPORT_CHAT_AGENT",
-    "PROXY_API_KEY": "<generate a long random string>",
+    "SNOWFLAKE_ACCOUNT_URL": "https://msu-prod.snowflakecomputing.com",
+    "SNOWFLAKE_PAT": "<service-user PAT from snowflake/grant-existing-agent.sql>",
+    "AGENT_DATABASE": "DBS_ANALYTICS_AI",
+    "AGENT_SCHEMA": "SPARTAN_TRENDS_AI",
+    "AGENT_NAME": "SPARTAN_TRENDS_CA",
+    "PROXY_API_KEY": "<generate a long random string, e.g. openssl rand -hex 24>",
     "ALLOWED_ORIGINS": "https://app.powerbi.com"
   }
 }

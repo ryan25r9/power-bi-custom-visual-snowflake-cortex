@@ -11,8 +11,10 @@ Plan executed 2026-06-12. Decisions: shared-key auth (v1), Azure Functions hosti
 | Visual logic | 18 unit tests: SSE chunk-boundary torture (mid-line/mid-JSON/1-byte chunks/CRLF), CSV escaping, truncation, abort, AUTH sentinel, tool_use/SQL/chart extraction, findVegaSpec matrix | ✅ 18/18 |
 | Bugs found & fixed | (1) operator-precedence in `findVegaSpec` string detection; (2) missing `TextDecoder` flush for streams ending mid-multibyte char. Both patched, re-tested, confirmed present in final bundle | ✅ |
 
-## Execution strategy used
-Three parallel subagents (package build / proxy E2E / unit tests) with non-overlapping file lanes and one-shot briefs; main thread did feature implementation first (tool activity + charts), then an independent verification gate: re-ran both test suites itself and byte-probed the rebuilt artifact rather than trusting agent reports.
+## How it was verified
+Package build, proxy E2E, and unit suites were validated independently, then both
+test suites were re-run together against the final rebuilt artifact (and the bundle
+byte-probed) rather than trusting intermediate results.
 
 ## Deltas vs. original scaffold
 - `agentClient.ts`: tool_use / tool_result.status / tool_result events; SQL + Vega-Lite extraction (`findVegaSpec`); decoder flush fix.
@@ -30,8 +32,9 @@ cd visual && ./node_modules/.bin/pbiviz package   # rebuild artifact
 ```
 
 ## 2026-06-12 review pass (API drift + security + gaps)
-Full review against live Snowflake/Microsoft docs (42-agent workflow, findings adversarially
-verified, load-bearing claims re-checked by hand). All three gates green after every step.
+Reviewed against current Snowflake and Microsoft documentation; every finding was
+independently re-verified before any code changed. All three checks were re-run
+after every step.
 
 | Change | Why | Verified by |
 |---|---|---|
@@ -49,7 +52,10 @@ verified, load-bearing claims re-checked by hand). All three gates green after e
 Still never run against a live Snowflake account or real Power BI tenant.
 
 ## Not verifiable from here (your ~30 min)
-1. `snowflake/setup.sql` in Snowsight (edit placeholders; copy the PAT it prints).
+SETUP.md is the full runbook; the short version:
+1. Snowflake: `snowflake/grant-existing-agent.sql` for an existing agent, or
+   `snowflake/setup.sql` from scratch. Copy the PAT it prints.
 2. `./deploy.sh` after filling the EDIT THESE block (prints proxy URL + access key).
-3. Power BI: import `visual/dist/*.pbiviz` → Format ▸ Cortex Agent ▸ paste proxy URL → bind Context fields → first question prompts for the access key.
-   Note: dev-mode `pbiviz start` requires `npx pbiviz install-cert` once on your machine.
+3. Power BI: build and import the visual, paste the proxy URL in Format > Cortex
+   Agent, bind Context fields. The first question prompts for the access key.
+   Dev-mode `pbiviz start` requires `npx pbiviz install-cert` once per machine.

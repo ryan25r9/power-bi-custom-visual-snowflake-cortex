@@ -69,7 +69,7 @@ export class Visual implements IVisual {
             this.refreshContextChip();
 
             const url = this.settings.agentCard.proxyUrl.value?.trim();
-            this.setStatus(url ? "" : "Set the Proxy URL in Format ➜ Cortex Agent to begin.");
+            this.setStatus(url ? "" : "Set the Proxy URL in Format > Cortex Agent to begin.");
             this.sendBtn.disabled = !url || this.busy;
             events?.renderingFinished(options);
         } catch (e) {

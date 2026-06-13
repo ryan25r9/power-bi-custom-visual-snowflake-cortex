@@ -14,8 +14,9 @@
  *  PROXY_API_KEY          shared key the visual must present (rotate freely)
  *  ALLOWED_ORIGINS        comma-separated; default https://app.powerbi.com
  *
- * Production upgrade path (see README §7): replace PROXY_API_KEY with Entra ID
- * JWT validation and swap SNOWFLAKE_PAT for per-user External OAuth tokens.
+ * Production upgrade path (see the Security model section in README.md):
+ * replace PROXY_API_KEY with Entra ID JWT validation and swap SNOWFLAKE_PAT
+ * for per-user External OAuth tokens. SETUP.md Part 2 covers deployment.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { timingSafeEqual } from "node:crypto";

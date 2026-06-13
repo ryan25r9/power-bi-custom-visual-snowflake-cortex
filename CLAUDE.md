@@ -11,8 +11,11 @@ never yet run against a live Snowflake account or real Power BI tenant.
   `capabilities.json` (dataRoles, **WebAccess privilege URL is a placeholder — must match deployed proxy host**).
   Prebuilt artifact: `visual/dist/*.pbiviz`.
 - `proxy/src/functions/agentProxy.ts` — @azure/functions v4 handler; CORS, shared-key auth, SSE passthrough.
-- `snowflake/setup.sql` — role/warehouse/agent DDL, service user, PAT. `deploy.sh` — Azure provisioning.
+- `snowflake/setup.sql` — from-scratch role/warehouse/agent DDL, service user, PAT.
+  `snowflake/grant-existing-agent.sql` — wire a service user to an existing agent (filled in for
+  MSU's SPARTAN_TRENDS_CA). `deploy.sh` — Azure provisioning (MSU values prefilled).
 - `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 28 unit tests. `PLAN.md` — verification log.
+- `SETUP.md` — handoff runbook for deploying the whole thing; keep it in sync with config changes.
 
 ## Commands
 ```bash
@@ -34,7 +37,7 @@ proxy; chunk-boundary-safe SSE parsing; fail-closed empty-key auth (constant-tim
 escaping/truncation. Bugs found+fixed: findVegaSpec precedence, TextDecoder flush. 2026-06-12 review
 (verified against live docs): `system_execute_sql` replaced `cortex_analyst_text_to_sql` in response
 streams Apr 2026 (agent-spec type unchanged — setup.sql is correct); CREATE AGENT / PAT / endpoint
-syntax current; `acquireAADToken` still AppSource-only (README §7 stands); vega-embed 7.1.0 renders
+syntax current; `acquireAADToken` still AppSource-only (README security model stands); vega-embed 7.1.0 renders
 untrusted specs through vega-interpreter (`ast: true`); key storage uses storageV2Service
 (storageService was removed in api 5.11.0); `options.jsonFilters` is properly typed (cast removed);
 retry wrapper (streamAgentWithRetry) never retries after first delivery or on AUTH; Rendering Events
@@ -45,7 +48,7 @@ wired in update().
    bump both majors together (mock + findVegaSpec assume v5 today). powerbi-visuals-tools 7.x is a
    webpack/Node-polyfill major — needs a dedicated pass.
 2. `acquireAADToken` / AADAuthentication eligibility for organizational visuals — if Microsoft ever
-   lifts the AppSource-only restriction, rework README §7 (proper SSO, drop shared key).
+   lifts the AppSource-only restriction, rework the README security model (proper SSO, drop shared key).
 3. Threads API v2: pass `thread_id`/`parent_message_id` on the existing `:run` endpoint instead of
    resending history; the `metadata` event carries the ids (currently ignored).
 4. Prompt injection is mitigated (untrusted-data framing both ends, read-only role), not solved —
