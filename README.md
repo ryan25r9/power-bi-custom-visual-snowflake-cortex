@@ -65,10 +65,14 @@ bash tools/run-e2e.sh
 - **1000-row DataView window, 200-row prompt cap.** Both deliberate. Bind
   aggregated fields, not raw fact tables: the goal is the story of the page, not a
   data dump. The row cap is adjustable in the Format pane.
-- **The proxy is stateless.** Full message history travels with each call. If
-  histories get long, the upgrade path is Snowflake threads: pass `thread_id` and
-  `parent_message_id` on the same `:run` endpoint and send only the new message.
-  The `metadata` event carries the IDs; the client currently ignores it.
+- **The proxy is stateless, and history is capped.** Each call sends at most the
+  last 10 messages, with context blocks stripped from older turns, so payloads
+  stay small and the agent always sees exactly one fresh snapshot of the report.
+  Snowflake threads (`thread_id`/`parent_message_id` on the same `:run` endpoint)
+  could move history server-side, but a thread keeps every message as sent, so
+  each turn's context block would pile up and the agent would see stale report
+  snapshots next to the current one. Don't switch without rethinking how context
+  is delivered. If users need longer recall, raise `MAX_TURNS` in visual.ts first.
 - **Untrusted input is treated as such.** Cell values go into the prompt, so the
   context block and the agent's instructions both state that report data is data,
   not instructions. Agent-supplied Vega-Lite specs render with `ast: true`, which

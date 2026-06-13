@@ -50,7 +50,11 @@ wired in update().
 2. `acquireAADToken` / AADAuthentication eligibility for organizational visuals — if Microsoft ever
    lifts the AppSource-only restriction, rework the README security model (proper SSO, drop shared key).
 3. Threads API v2: pass `thread_id`/`parent_message_id` on the existing `:run` endpoint instead of
-   resending history; the `metadata` event carries the ids (currently ignored).
+   resending history; the `metadata` event carries the ids (currently ignored). Caveat before
+   building: threads persist every message as sent, so each turn's REPORT CONTEXT block would
+   accumulate server-side and the agent would see stale report snapshots — needs a context-delivery
+   rethink first. History is already capped (MAX_TURNS=10, old contexts stripped), so resending is
+   cheap; raise MAX_TURNS if users need longer recall.
 4. Prompt injection is mitigated (untrusted-data framing both ends, read-only role), not solved —
    keep the agent role SELECT-only; revisit if tools gain write capability.
 5. Markdown rendering of answers stays deferred: it would trade away the textContent-only XSS posture.
