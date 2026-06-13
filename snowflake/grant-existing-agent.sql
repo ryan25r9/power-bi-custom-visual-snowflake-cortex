@@ -72,5 +72,6 @@ ALTER USER SVC_PBI_CORTEX_CHAT
 --    stream back. SETUP.md Part 1 explains what failures here mean.
 -- curl -N -X POST "https://msu-prod.snowflakecomputing.com/api/v2/databases/DBS_ANALYTICS_AI/schemas/SPARTAN_TRENDS_AI/agents/SPARTAN_TRENDS_CA:run" \
 --   -H "Authorization: Bearer <PAT>" \
+--   -H "X-Snowflake-Authorization-Token-Type: PROGRAMMATIC_ACCESS_TOKEN" \
 --   -H "Content-Type: application/json" -H "Accept: text/event-stream" \
 --   -d '{"messages":[{"role":"user","content":[{"type":"text","text":"hello, what can you do?"}]}]}'

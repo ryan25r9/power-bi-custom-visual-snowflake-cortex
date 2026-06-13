@@ -56,22 +56,32 @@ Two things to know about the PAT:
 
 **Smoke test.** Before going any further, prove the token works from your laptop:
 
+Replace `<THE_PAT>` with the actual token (keep no angle brackets), then run:
+
 ```bash
 curl -N -X POST "https://msu-prod.snowflakecomputing.com/api/v2/databases/DBS_ANALYTICS_AI/schemas/SPARTAN_TRENDS_AI/agents/SPARTAN_TRENDS_CA:run" \
   -H "Authorization: Bearer <THE_PAT>" \
+  -H "X-Snowflake-Authorization-Token-Type: PROGRAMMATIC_ACCESS_TOKEN" \
   -H "Content-Type: application/json" -H "Accept: text/event-stream" \
   -d '{"messages":[{"role":"user","content":[{"type":"text","text":"hello, what can you do?"}]}]}'
 ```
 
+The token-type header matters: without it, Snowflake guesses what kind of token you
+sent, and a wrong guess comes back as `390303 Invalid OAuth access token` even when
+the real problem is something else.
+
 You should see lines like `event: response.status` and `event: response.text.delta`
-stream back over a few seconds. If the hostname doesn't resolve, try the regional
-URL instead: `https://msu.east-us-2.azure.snowflakecomputing.com`. Whichever one
-works here is the one you'll use as `SNOWFLAKE_ACCOUNT_URL` in Part 2.
+stream back over a few seconds. If the hostname doesn't resolve, swap the host for
+the regional URL (`msu.east-us-2.azure.snowflakecomputing.com`) and keep the rest
+of the path exactly the same. Whichever host works here is the one you'll use as
+`SNOWFLAKE_ACCOUNT_URL` in Part 2. Note: any JSON error response means the host is
+fine and you're debugging auth, not connectivity.
 
 Common failures at this step:
 
 | Response | Meaning |
 |---|---|
+| 390303 "Invalid OAuth access token" | The token string is wrong (placeholder left in, partial copy, expired/revoked PAT), or the token-type header above is missing |
 | 401 invalid token | PAT copied wrong, expired, or the user's network policy blocks your IP |
 | 403 | The service user's role is missing USAGE on the agent |
 | 404 | Database/schema/agent name typo in the URL |

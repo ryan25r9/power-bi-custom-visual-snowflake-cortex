@@ -79,7 +79,11 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
             headers: {
                 "Content-Type": "application/json",
                 "Accept": "text/event-stream",
-                "Authorization": `Bearer ${env("SNOWFLAKE_PAT")}`
+                "Authorization": `Bearer ${env("SNOWFLAKE_PAT")}`,
+                // Tells Snowflake the bearer token is a PAT. Officially optional, but
+                // without it Snowflake guesses the token type and a bad guess surfaces
+                // as a confusing "Invalid OAuth access token" error.
+                "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN"
             },
             body: JSON.stringify({ messages: body.messages })
         });

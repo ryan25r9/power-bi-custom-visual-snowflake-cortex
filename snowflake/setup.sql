@@ -96,7 +96,9 @@ ALTER USER SVC_PBI_CORTEX_CHAT
 
 -- 7. Smoke test (replace <token>, account URL) --------------------------------
 -- curl -N -X POST "https://<org>-<account>.snowflakecomputing.com/api/v2/databases/AI_DB/schemas/AGENTS/agents/REPORT_CHAT_AGENT:run" \
---   -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -H "Accept: text/event-stream" \
+--   -H "Authorization: Bearer <token>" \
+--   -H "X-Snowflake-Authorization-Token-Type: PROGRAMMATIC_ACCESS_TOKEN" \
+--   -H "Content-Type: application/json" -H "Accept: text/event-stream" \
 --   -d '{"messages":[{"role":"user","content":[{"type":"text","text":"hello, what can you do?"}]}]}'
 
 --------------------------------------------------------------------------------
