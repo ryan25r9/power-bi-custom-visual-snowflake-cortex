@@ -13,10 +13,10 @@
 set -euo pipefail
 
 # ── EDIT THESE ────────────────────────────────────────────────────────────────
-RG="rg-cortex-chat"                             # resource group (created if missing)
+RG="rg-pbi-cortex-chat"              # resource group (created if missing)
 LOCATION="eastus2"
-FUNC_APP="<globally-unique-func-name>"          # e.g. msu-cortex-chat-proxy
-STORAGE="<globallyuniquestorage>"               # lowercase letters+digits, 3-24 chars
+FUNC_APP="PBI_CORTEX_CHAT_PROXY"     # e.g. msu-cortex-chat-proxy
+STORAGE="pbicortexproxystorage"      # lowercase letters+digits, 3-24 chars
 
 # Where the agent lives. Pre-filled for the MSU spartan-trends agent.
 # If msu-prod doesn't resolve from Azure, use the regional URL instead:
