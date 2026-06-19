@@ -100,9 +100,12 @@ Don't continue until this curl streams. Everything downstream depends on it.
 ## Part 2 - The proxy
 
 Open [`deploy.sh`](deploy.sh) and fill in the `EDIT THESE` block at the top.
-The Snowflake values are already set for the spartan-trends agent; you supply
-a globally-unique Function App name, a storage account name, and the PAT from
-Part 1. Then:
+The Snowflake values, resource group (`rg-pbi-cortex-chat`), app name
+(`pbi-cortex-chat-proxy`), and storage account are already filled in; the one
+value you must supply is the PAT from Part 1. If you change the app name, it has
+to stay a valid hostname (lowercase letters, digits, hyphens) because it becomes
+`<name>.azurewebsites.net`, and you'll need to change it in Part 3 step 1 too.
+Then:
 
 ```bash
 az login
@@ -112,14 +115,14 @@ az login
 The script creates the resource group and Function App, sets the app settings,
 builds the proxy, and publishes it. At the end it prints two values - save both:
 
-- the **proxy URL** (`https://<your-app>.azurewebsites.net/api/agent`)
+- the **proxy URL** (`https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent`)
 - the **access key** (a random string it generated; report users will paste this
   into the visual once)
 
 Smoke test the deployed proxy (the script prints this command too):
 
 ```bash
-curl -N -X POST https://<your-app>.azurewebsites.net/api/agent \
+curl -N -X POST https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent \
   -H "Content-Type: application/json" -H "x-proxy-key: <the access key>" \
   -d '{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}'
 ```
@@ -130,7 +133,7 @@ Afterwards, ask the Snowflake admin to tighten the network policy from
 `0.0.0.0/0` to the Function's outbound IPs. This command lists them:
 
 ```bash
-az functionapp show -g rg-cortex-chat -n <your-app> --query outboundIpAddresses
+az functionapp show -g rg-pbi-cortex-chat -n pbi-cortex-chat-proxy --query outboundIpAddresses
 ```
 
 To run the proxy locally instead of (or before) deploying: `cd proxy`,
@@ -140,19 +143,21 @@ To run the proxy locally instead of (or before) deploying: `cd proxy`,
 ## Part 3 - The visual
 
 The visual must be built once because Power BI only lets a visual call hosts
-declared inside the package. The repo ships with a placeholder host, so an
-unmodified build can't reach your proxy.
+declared inside the package.
 
-1. Open [`visual/capabilities.json`](visual/capabilities.json) and find the
-   `privileges` section. Replace `https://YOUR-PROXY.azurewebsites.net` with your
-   real Function host (origin only, no `/api/agent` path):
+1. Open [`visual/capabilities.json`](visual/capabilities.json) and check the
+   `privileges` section. It's already set to the deployed proxy host (origin only,
+   no `/api/agent` path) - confirm it matches the name you used in `deploy.sh`:
 
    ```json
    "privileges": [
      { "name": "WebAccess", "essential": true,
-       "parameters": ["https://<your-app>.azurewebsites.net"] }
+       "parameters": ["https://pbi-cortex-chat-proxy.azurewebsites.net"] }
    ]
    ```
+
+   If you changed the app name, edit this string to match, or the visual won't be
+   allowed to call the proxy.
 
 2. Build the package:
 
@@ -174,8 +179,8 @@ unmodified build can't reach your proxy.
 
 4. Add the visual to a page and configure it (select it, then the **Format** pane >
    **Cortex Agent** card):
-   - **Proxy URL**: `https://<your-app>.azurewebsites.net/api/agent` (the full URL
-     with the path this time)
+   - **Proxy URL**: `https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent` (the
+     full URL with the path this time)
    - **Report description** (optional but recommended): one sentence about what the
      page shows, e.g. "Dining spend and usage trends by category". The agent
      reads this with every question.

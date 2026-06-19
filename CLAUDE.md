@@ -8,7 +8,7 @@ never yet run against a live Snowflake account or real Power BI tenant.
 ## Map
 - `visual/` — pbiviz project. `src/visual.ts` (UI/orchestration), `src/agentClient.ts` (SSE client,
   tool/chart extraction), `src/contextBuilder.ts` (DataView→prompt), `src/settings.ts` (format pane),
-  `capabilities.json` (dataRoles, **WebAccess privilege URL is a placeholder — must match deployed proxy host**).
+  `capabilities.json` (dataRoles, **WebAccess privilege URL set to `pbi-cortex-chat-proxy.azurewebsites.net` — must match the deployed proxy host**).
   Prebuilt artifact: `visual/dist/*.pbiviz`.
 - `proxy/src/functions/agentProxy.ts` — @azure/functions v4 handler; CORS, shared-key auth, SSE passthrough.
 - `snowflake/setup.sql` — from-scratch role/warehouse/agent DDL, service user, PAT.
@@ -62,4 +62,4 @@ wired in update().
 ## Constraints
 - Certified-visual rules forbid web access — this visual is intentionally uncertified/organizational; don't "fix" that.
 - No secrets in format-pane settings or pbix; key stays in localStorage/memory, Snowflake creds stay in the proxy.
-- `capabilities.json` WebAccess privilege URL is still a placeholder — must match the deployed proxy host.
+- `capabilities.json` WebAccess privilege URL is set to `pbi-cortex-chat-proxy.azurewebsites.net` — must match the deployed proxy host if it's renamed.

@@ -36,7 +36,7 @@
     {
       "name": "WebAccess",
       "essential": true,
-      "parameters": ["https://YOUR-PROXY.azurewebsites.net"]
+      "parameters": ["https://pbi-cortex-chat-proxy.azurewebsites.net"]
     },
     {
       "name": "LocalStorage",

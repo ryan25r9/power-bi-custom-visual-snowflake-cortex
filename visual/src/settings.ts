@@ -12,9 +12,9 @@ class AgentCard extends formattingSettings.SimpleCard {
     proxyUrl = new formattingSettings.TextInput({
         name: "proxyUrl",
         displayName: "Proxy URL",
-        description: "Your Azure Function endpoint, e.g. https://my-proxy.azurewebsites.net/api/agent",
+        description: "Your Azure Function endpoint, e.g. https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent",
         value: "",
-        placeholder: "https://my-proxy.azurewebsites.net/api/agent"
+        placeholder: "https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent"
     });
 
     includeContext = new formattingSettings.ToggleSwitch({
