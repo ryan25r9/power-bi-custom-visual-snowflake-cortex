@@ -3,9 +3,11 @@
 # sync.sh — Commit local changes and sync them to GitHub via a PR with squash auto-merge.
 #
 # Mirrors the sync flow used in ryans-claude-plugins, minus the plugin-specific
-# build steps. `main` is protected (PR-required) by the `protect_main` ruleset, so
-# this never pushes straight to main — it always goes branch -> PR -> squash
-# auto-merge, then fast-forwards your local main to the merged commit.
+# build steps. main is PR-only by CONVENTION (see CONTRIBUTING.md) — not
+# server-enforced on the free plan — so this never pushes straight to main: it
+# always goes branch -> PR -> squash merge, then fast-forwards your local main to
+# the merged commit. This is the maintainer/Claude helper; a plain-IDE developer
+# just uses normal git + a PR on GitHub.
 #
 # Usage:
 #   ./sync.sh                          # commit "Sync updates" + PR + auto-merge + ff local main
@@ -58,7 +60,7 @@ git commit -m "$MSG
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 echo
 
-# 3. Push via PR (never direct to main — see the protect_main ruleset)
+# 3. Push via PR (never direct to main — main is PR-only by convention)
 if [ "$PUSH" = true ]; then
   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
   if [ "$CURRENT_BRANCH" = "main" ]; then

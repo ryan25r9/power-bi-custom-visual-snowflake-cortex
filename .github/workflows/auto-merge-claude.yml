@@ -1,15 +1,14 @@
 name: Auto-merge Claude PRs
 
-# Belt-and-suspenders for PRs opened by scheduled-task / Claude agent runs.
+# Convenience for PRs opened by the maintainer's automated Claude runs ONLY.
 # Any PR whose head branch starts with `claude/` or `briefs/` gets converted
-# from draft (if applicable) and squash-auto-merged with branch deletion.
+# from draft (if applicable) and squash-merged with branch deletion.
 #
-# This is a backstop. sync.sh also calls `gh pr merge --squash --auto --delete-branch`
-# as its last step, but if a run crashes before that step OR a runtime
-# leaves an unmerged draft behind, this workflow catches it.
-#
-# Non-matching PRs (feat/*, fix/*, chore/*, etc.) are untouched and follow the
-# normal flow with the protect_main ruleset.
+# Scope: this is the MAINTAINER's own automation on the root (Phase 2) area.
+# The second developer's branches (phase1/*, fix/*, etc.) are NOT matched here —
+# they follow the reviewed branch -> PR -> merge flow in CONTRIBUTING.md. Glance
+# at the CI checks before merging; if the repo moves to GitHub Pro, switch the
+# merge step to `--auto` alone so it waits for required checks.
 
 on:
   pull_request:

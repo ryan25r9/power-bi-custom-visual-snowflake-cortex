@@ -1,0 +1,27 @@
+# Code ownership → GitHub auto-requests the right reviewer on a PR based on the
+# files it touches. Later patterns win. (Advisory on the free plan; becomes
+# enforced if branch protection's "require review from Code Owners" is turned on.)
+#
+# TODO: replace @second-dev-handle with the Phase 1 developer's actual GitHub
+# username once they're invited as a collaborator (Settings → Collaborators).
+
+# Default: the maintainer owns everything not otherwise claimed.
+*                       @ryan25r9
+
+# Phase 2 (maintainer)
+/visual/                @ryan25r9
+/proxy/                 @ryan25r9
+/snowflake/             @ryan25r9
+/tests/                 @ryan25r9
+/tools/                 @ryan25r9
+
+# Repo plumbing (maintainer)
+/.github/               @ryan25r9
+/.githooks/             @ryan25r9
+/sync.sh                @ryan25r9
+/setup-hooks.sh         @ryan25r9
+/deploy.sh              @ryan25r9
+/CLAUDE.md              @ryan25r9
+
+# Phase 1 (second developer) — last match wins, so this overrides the default.
+/phase1/                @second-dev-handle

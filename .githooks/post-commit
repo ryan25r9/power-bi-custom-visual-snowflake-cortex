@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 #
-# post-commit — safety-net auto-push.
+# post-commit — safety-net auto-push for FEATURE BRANCHES.
 #
-# Pushes `main` to origin after every commit on `main`, so a commit can never
-# strand locally (e.g. if a session ends right after committing). Normal,
+# Pushes the CURRENT feature branch to origin after each commit, so work can
+# never strand locally (e.g. if a session ends right after committing). Normal,
 # non-forced push only — it never rewrites remote history.
 #
+# main is shared with a second developer and is PR-only by convention, so this
+# hook NEVER pushes main — on main it just warns and leaves the commit local for
+# sync.sh (or a manual push) to move onto a PR branch.
+#
 # Deliberately narrow + best-effort:
-#   • only fires on `main` (feature/chore branches push themselves)
+#   • never pushes main (warns instead)
+#   • pushes only the branch you're actually on
 #   • skips mid-merge/rebase/cherry-pick sequences
 #   • skips when sync.sh is driving (it manages its own PR push)
-#   • a failed push (offline, non-fast-forward after an amend) just warns —
-#     your commit is safe locally and syncs on the next push.
+#   • a failed push (offline, etc.) just warns — the commit is safe locally.
 #
 # Activated via `core.hooksPath=.githooks` (run ./setup-hooks.sh once per clone).
+# MACHINE-LOCAL: only whoever runs setup-hooks.sh gets this. A developer using a
+# plain IDE never runs it, so their git is unaffected (stock behavior, no push).
 
 # Hooks run with GIT_DIR/GIT_INDEX_FILE exported, which confuses sub-commands.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -26,7 +32,13 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$ROOT" || exit 0
 
 branch="$(git symbolic-ref --short -q HEAD)"
-[ "$branch" = "main" ] || exit 0    # only auto-push main; skip detached HEAD / other branches
+# Never auto-push a detached HEAD, and never auto-push the shared main branch.
+[ -z "$branch" ] && exit 0
+if [ "$branch" = "main" ]; then
+  echo "[post-commit] on main — not auto-pushing (main is PR-only)."
+  echo "[post-commit]   run ./sync.sh to open a PR, or push manually if you mean to."
+  exit 0
+fi
 
 # Don't fire while a merge/rebase/cherry-pick is still in progress.
 if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then exit 0; fi
@@ -34,14 +46,16 @@ GITDIR="$(git rev-parse --git-dir 2>/dev/null)"
 [ -d "$GITDIR/rebase-merge" ] && exit 0
 [ -d "$GITDIR/rebase-apply" ] && exit 0
 
-# Nothing new relative to origin/main? Then there's nothing to push.
-if git rev-parse -q --verify origin/main >/dev/null 2>&1; then
-  [ "$(git rev-list --count origin/main..HEAD 2>/dev/null)" = "0" ] && exit 0
+# Nothing new relative to this branch's upstream? Then there's nothing to push.
+upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+if [ -n "$upstream" ]; then
+  [ "$(git rev-list --count "$upstream"..HEAD 2>/dev/null)" = "0" ] && exit 0
 fi
 
-echo "[post-commit] auto-pushing main -> origin…"
-if git push --quiet origin main 2>/dev/null; then
-  echo "[post-commit] ✓ pushed to origin/main"
+echo "[post-commit] auto-pushing $branch -> origin…"
+# -u sets upstream on the first push of a new branch; harmless thereafter.
+if git push --quiet -u origin "$branch" 2>/dev/null; then
+  echo "[post-commit] ✓ pushed to origin/$branch"
 else
   echo "[post-commit] ⚠ push failed (offline / needs manual push) — will sync on the next push."
 fi
