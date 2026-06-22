@@ -71,9 +71,19 @@ This is the part that has no UI in the visual — you set it up once in the mode
    ```
    Zero rows is deliberate — the only way the column ever gets a value is the visual
    injecting one.
-3. **Create a Text parameter** `PromptParameter`, then in **Model view** select
-   `PromptBinding[Prompt]` → **Advanced → Bind to parameter** → choose `PromptParameter`,
-   **Multi-select = No**.
+3. **Create a Text parameter** `PromptParameter` (Home → Manage Parameters → New):
+   - **Type** = Text, **Required** = checked.
+   - **Suggested Values** = **Any value** (not "List of values" — that would block
+     arbitrary prompt text from flowing through).
+   - **Current Value** = `__no_prompt__`. This is only the design-time default; the
+     visual's filter overrides it at runtime. It's a sentinel on purpose: on initial
+     load and on every scheduled refresh no question is selected, so the query runs
+     with this default — and the stored proc short-circuits `__no_prompt__` to return
+     no answer with **zero agent cost** (it never calls the agent on the sentinel).
+     Don't put a real question here, or every refresh fires a billable agent run.
+
+   Then in **Model view** select `PromptBinding[Prompt]` → **Advanced → Bind to
+   parameter** → choose `PromptParameter`, **Multi-select = No**.
 4. **Create the answer query** (DirectQuery). Keep the *source* line static and pass the
    prompt as a **bound parameter** — never concatenate it into the source, or the Service
    will refuse to refresh (see Gotchas):

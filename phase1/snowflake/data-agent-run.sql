@@ -76,9 +76,18 @@ DECLARE
   status        STRING;
   out_rs        RESULTSET;
 BEGIN
+  -- 2a. Idle guard. On initial report load and on every scheduled refresh, no
+  --     filter is selected yet, so the query runs with the M parameter's default
+  --     ('__no_prompt__' — see phase1/README.md). Skip the agent entirely so we
+  --     don't pay for a run on a non-question. Return no answer (STATUS 'IDLE').
+  IF (TRIM(:PROMPT) = '' OR :PROMPT = '__no_prompt__') THEN
+    out_rs := (SELECT NULL::STRING AS ANSWER_TEXT, NULL::STRING AS GENERATED_SQL, 'IDLE' AS STATUS);
+    RETURN TABLE(out_rs);
+  END IF;
+
   prompt_hash := SHA2(:PROMPT, 256);
 
-  -- 2a. Cache lookup (24h TTL — tune with the data owner; a daily-refresh
+  -- 2b. Cache lookup (24h TTL — tune with the data owner; a daily-refresh
   --     dataset can run hotter). On a hit, return immediately, zero agent cost.
   SELECT COUNT(*) INTO :hit_count
   FROM AGENT_ANSWER_CACHE
@@ -97,7 +106,7 @@ BEGIN
     RETURN TABLE(out_rs);
   END IF;
 
-  -- 2b. Run the agent. Build the request body with OBJECT_CONSTRUCT so the prompt
+  -- 2c. Run the agent. Build the request body with OBJECT_CONSTRUCT so the prompt
   --     is a JSON *value*, never concatenated into SQL text — the real injection
   --     guard. (The visual sends the prompt as a bound parameter; this is the
   --     server-side belt-and-suspenders.)
@@ -117,7 +126,7 @@ BEGIN
     )
   );
 
-  -- 2c. Parse by content TYPE via LATERAL FLATTEN — NEVER index-based
+  -- 2d. Parse by content TYPE via LATERAL FLATTEN — NEVER index-based
   --     (content[2]:text): the block order shifts between runs. We pull the text
   --     block (the answer), the SQL the agent ran (system_execute_sql, or the
   --     legacy cortex_analyst_text_to_sql), and any error block.
@@ -132,7 +141,7 @@ BEGIN
   INTO :answer_text, :generated_sql, :err_msg
   FROM (SELECT f.value AS block FROM TABLE(FLATTEN(input => :resp:content)) f);
 
-  -- 2d. Derive status; fall back cleanly when there's no text answer.
+  -- 2e. Derive status; fall back cleanly when there's no text answer.
   IF (answer_text IS NOT NULL) THEN
     status := 'OK';
   ELSEIF (err_msg IS NOT NULL) THEN
@@ -143,7 +152,7 @@ BEGIN
     answer_text := 'No answer returned by the agent.';
   END IF;
 
-  -- 2e. Write-through to the cache on a clean answer only.
+  -- 2f. Write-through to the cache on a clean answer only.
   IF (status = 'OK') THEN
     INSERT INTO AGENT_ANSWER_CACHE (PROMPT_HASH, PROMPT, ANSWER_TEXT, GENERATED_SQL, STATUS)
     VALUES (:prompt_hash, :PROMPT, :answer_text, :generated_sql, :status);
