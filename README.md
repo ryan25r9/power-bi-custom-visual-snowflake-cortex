@@ -17,6 +17,20 @@ active on the page.
 **Setting it up?** Follow [SETUP.md](SETUP.md). It's a step-by-step runbook and
 assumes no familiarity with this codebase.
 
+## Repository phases
+
+The repo holds the same product at three stages. **This README and everything at the
+repo root describe Phase 2.**
+
+| Phase | What | Where |
+|---|---|---|
+| **Phase 1** | Quick demo with **no proxy** — the question round-trips through a Dynamic M parameter and a Snowflake stored proc; the answer comes back as data. No streaming, no memory. Throwaway once Phase 2 ships. | [`phase1/`](phase1/README.md) |
+| **Phase 2** | This repo. Azure Function proxy + Service Principal, streaming answers, multi-turn chat. | repo root |
+| **Phase 3** | Per-user Entra passthrough (`AADAuthentication` + External OAuth). Requires AppSource publication. Not built yet; continues from Phase 2. | — |
+
+Phases 1 and 2 are developed in parallel by different people — see [CONTRIBUTING.md](CONTRIBUTING.md)
+for the branch/PR workflow.
+
 ## How the context works
 
 Power BI hands a custom visual whatever fields the report author drags into its

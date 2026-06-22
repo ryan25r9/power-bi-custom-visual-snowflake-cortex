@@ -1,0 +1,49 @@
+{
+  "dataRoles": [
+    {
+      "displayName": "Context fields",
+      "name": "contextFields",
+      "kind": "GroupingOrMeasure",
+      "description": "Dimensions and measures that define this page's story. Arrives already filtered by every active slicer/filter — this is what the agent 'sees'. A visual can only read fields bound here, so bind the Region/Year/etc. you want the agent aware of."
+    },
+    {
+      "displayName": "Answer text",
+      "name": "answerText",
+      "kind": "Grouping",
+      "description": "Bind the ANSWER_TEXT column returned by the Cortex answer query. The agent's reply lands here as a row of data after you ask a question."
+    }
+  ],
+  "dataViewMappings": [
+    {
+      "table": {
+        "rows": {
+          "select": [
+            { "for": { "in": "contextFields" } },
+            { "for": { "in": "answerText" } }
+          ],
+          "dataReductionAlgorithm": { "top": { "count": 1000 } }
+        }
+      }
+    }
+  ],
+  "objects": {
+    "agent": {
+      "properties": {
+        "bindingTable": { "type": { "text": true } },
+        "bindingColumn": { "type": { "text": true } },
+        "includeContext": { "type": { "bool": true } },
+        "maxContextRows": { "type": { "numeric": true } },
+        "agentHint": { "type": { "text": true } }
+      }
+    },
+    "general": {
+      "properties": {
+        "filter": { "type": { "filter": true } }
+      }
+    }
+  },
+  "privileges": [],
+  "supportsEmptyDataView": true,
+  "supportsLandingPage": true,
+  "suppressDefaultTitle": true
+}

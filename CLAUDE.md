@@ -5,6 +5,10 @@ The visual serializes its own filtered DataView (fields the author binds + activ
 prompt, so the agent sees "what the user is looking at." Built and verified 2026-06-12 in a sandbox;
 never yet run against a live Snowflake account or real Power BI tenant.
 
+**This file describes Phase 2 (repo root).** The repo is multi-phase — see README "Repository phases".
+`phase1/` is a separate, throwaway demo (no proxy; M-parameter round-trip to a Snowflake stored proc)
+owned by a second developer; it has its own build/gate and does not share code with Phase 2.
+
 ## Map
 - `visual/` — pbiviz project. `src/visual.ts` (UI/orchestration), `src/agentClient.ts` (SSE client,
   tool/chart extraction), `src/contextBuilder.ts` (DataView→prompt), `src/settings.ts` (format pane),
@@ -16,6 +20,10 @@ never yet run against a live Snowflake account or real Power BI tenant.
   MSU's SPARTAN_TRENDS_CA). `deploy.sh` — Azure provisioning (MSU values prefilled).
 - `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 28 unit tests. `PLAN.md` — verification log.
 - `SETUP.md` — handoff runbook for deploying the whole thing; keep it in sync with config changes.
+- `phase1/` — separate Phase 2-throwaway demo (own `visual/`, `snowflake/`, README, gate). Don't touch
+  it for Phase 2 work; CI runs its `phase1/visual/tests/run-tests.sh` + `pbiviz package` independently.
+- `.github/workflows/ci.yml`, `.githooks/post-commit`, `CONTRIBUTING.md` — two-dev flow (branch→PR,
+  main is PR-only by convention). The post-commit hook pushes the current branch, never main.
 
 ## Commands
 ```bash
