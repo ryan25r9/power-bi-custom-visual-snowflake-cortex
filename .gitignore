@@ -22,3 +22,4 @@ local.settings.json
 # Logs
 *.log
 npm-debug.log*
+.vscode/settings.json
