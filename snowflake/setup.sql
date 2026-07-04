@@ -9,24 +9,24 @@
 --------------------------------------------------------------------------------
 
 -- 1. Role + warehouse the agent runs under -----------------------------------
-CREATE ROLE IF NOT EXISTS PBI_CORTEX_CHAT_ROLE;
+CREATE ROLE IF NOT EXISTS SG_MSU_CORTEX_CHAT_PILOT;
 CREATE WAREHOUSE IF NOT EXISTS PBI_CHAT_WH
   WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE;
-GRANT USAGE ON WAREHOUSE PBI_CHAT_WH TO ROLE PBI_CORTEX_CHAT_ROLE;
+GRANT USAGE ON WAREHOUSE PBI_CHAT_WH TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 
 -- Cortex entitlement (account-level database role)
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE PBI_CORTEX_CHAT_ROLE;
+GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 
 -- Grant read access to the data your semantic view covers
--- GRANT USAGE ON DATABASE <your_db> TO ROLE PBI_CORTEX_CHAT_ROLE;
--- GRANT USAGE ON SCHEMA <your_db>.<your_schema> TO ROLE PBI_CORTEX_CHAT_ROLE;
--- GRANT SELECT ON ALL TABLES IN SCHEMA <your_db>.<your_schema> TO ROLE PBI_CORTEX_CHAT_ROLE;
+-- GRANT USAGE ON DATABASE <your_db> TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+-- GRANT USAGE ON SCHEMA <your_db>.<your_schema> TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+-- GRANT SELECT ON ALL TABLES IN SCHEMA <your_db>.<your_schema> TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 
 -- 2. Home for the agent --------------------------------------------------------
 CREATE DATABASE IF NOT EXISTS AI_DB;
 CREATE SCHEMA IF NOT EXISTS AI_DB.AGENTS;
-GRANT USAGE ON DATABASE AI_DB TO ROLE PBI_CORTEX_CHAT_ROLE;
-GRANT USAGE ON SCHEMA AI_DB.AGENTS TO ROLE PBI_CORTEX_CHAT_ROLE;
+GRANT USAGE ON DATABASE AI_DB TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+GRANT USAGE ON SCHEMA AI_DB.AGENTS TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 
 -- 3. Semantic view (the agent's "brain" for structured data) ------------------
 -- Prereq: build one over your reporting tables (Snowsight > AI & ML > Studio,
@@ -70,15 +70,15 @@ CREATE OR REPLACE AGENT REPORT_CHAT_AGENT
         warehouse: "PBI_CHAT_WH"
   $$;
 
-GRANT USAGE ON AGENT AI_DB.AGENTS.REPORT_CHAT_AGENT TO ROLE PBI_CORTEX_CHAT_ROLE;
+GRANT USAGE ON AGENT AI_DB.AGENTS.REPORT_CHAT_AGENT TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 
 -- 5. Service user the proxy authenticates as ----------------------------------
 CREATE USER IF NOT EXISTS SVC_PBI_CORTEX_CHAT
   TYPE = SERVICE
-  DEFAULT_ROLE = PBI_CORTEX_CHAT_ROLE          -- agents run under the DEFAULT role
+  DEFAULT_ROLE = SG_MSU_CORTEX_CHAT_PILOT          -- agents run under the DEFAULT role
   DEFAULT_WAREHOUSE = PBI_CHAT_WH              -- and DEFAULT warehouse
   COMMENT = 'Power BI Cortex chat proxy';
-GRANT ROLE PBI_CORTEX_CHAT_ROLE TO USER SVC_PBI_CORTEX_CHAT;
+GRANT ROLE SG_MSU_CORTEX_CHAT_PILOT TO USER SVC_PBI_CORTEX_CHAT;
 
 -- 6. Programmatic Access Token (PAT) for the proxy ----------------------------
 -- PATs require an authentication policy permitting them, and service users
@@ -89,7 +89,7 @@ ALTER USER SVC_PBI_CORTEX_CHAT SET NETWORK_POLICY = PBI_CHAT_PROXY_NP;
 
 ALTER USER SVC_PBI_CORTEX_CHAT
   ADD PROGRAMMATIC ACCESS TOKEN PBI_CHAT_PAT
-  ROLE_RESTRICTION = 'PBI_CORTEX_CHAT_ROLE'
+  ROLE_RESTRICTION = 'SG_MSU_CORTEX_CHAT_PILOT'
   DAYS_TO_EXPIRY = 90;
 -- ^ Copy the returned token into the proxy's SNOWFLAKE_PAT app setting NOW;
 --   it is shown only once. (Alternative: generate via Snowsight > Admin > Users.)

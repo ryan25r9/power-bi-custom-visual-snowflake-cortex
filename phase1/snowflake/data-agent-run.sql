@@ -7,7 +7,7 @@
 -- as a row of data.
 --
 -- PREREQUISITE: run ../../snowflake/grant-existing-agent.sql first. It creates
--- PBI_CORTEX_CHAT_ROLE and grants it USAGE on the agent + semantic view +
+-- SG_MSU_CORTEX_CHAT_PILOT and grants it USAGE on the agent + semantic view +
 -- warehouse, and creates the service user/PAT. This file only adds the wrapper
 -- procedure, the answer cache, and their grants.
 --
@@ -22,7 +22,7 @@ USE SCHEMA DBS_ANALYTICS_AI.SPARTAN_TRENDS_AI;
 --    Confirm the agent runs from SQL under the proxy role. You should get a JSON
 --    object back whose content[] has a block with "type":"text".
 --
---    USE ROLE PBI_CORTEX_CHAT_ROLE;
+--    USE ROLE SG_MSU_CORTEX_CHAT_PILOT;
 --    USE WAREHOUSE WHS_SPARTAN_TRENDS_AGENT;
 --    SELECT TRY_PARSE_JSON(
 --      SNOWFLAKE.CORTEX.DATA_AGENT_RUN(
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS AGENT_ANSWER_CACHE (
 -- supported and fails (often silently). So the identity that CALLs this (the
 -- Power BI dataset connection — see grants in step 3) must itself hold the full
 -- agent-run grant chain, which grant-existing-agent.sql already gives
--- PBI_CORTEX_CHAT_ROLE.
+-- SG_MSU_CORTEX_CHAT_PILOT.
 CREATE OR REPLACE PROCEDURE DATA_AGENT_RUN(PROMPT STRING)
   RETURNS TABLE (ANSWER_TEXT STRING, GENERATED_SQL STRING, STATUS STRING)
   LANGUAGE SQL
@@ -172,12 +172,12 @@ $$;
 -- The proc runs with caller's rights, so the CALLER needs read/write on the cache
 -- and EXECUTE on the proc. The caller is the Power BI dataset's Snowflake
 -- connection identity — point that connection at a Service Principal / PAT whose
--- DEFAULT ROLE is PBI_CORTEX_CHAT_ROLE (it already has the agent-run chain).
-GRANT SELECT, INSERT, DELETE ON TABLE AGENT_ANSWER_CACHE TO ROLE PBI_CORTEX_CHAT_ROLE;
-GRANT USAGE ON PROCEDURE DATA_AGENT_RUN(STRING)        TO ROLE PBI_CORTEX_CHAT_ROLE;
+-- DEFAULT ROLE is SG_MSU_CORTEX_CHAT_PILOT (it already has the agent-run chain).
+GRANT SELECT, INSERT, DELETE ON TABLE AGENT_ANSWER_CACHE TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+GRANT USAGE ON PROCEDURE DATA_AGENT_RUN(STRING)        TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 
 -- 4. Smoke test the proc (run as the caller role) ------------------------------
--- USE ROLE PBI_CORTEX_CHAT_ROLE;
+-- USE ROLE SG_MSU_CORTEX_CHAT_PILOT;
 -- USE WAREHOUSE WHS_SPARTAN_TRENDS_AGENT;
 -- CALL DATA_AGENT_RUN('What were the top dining categories by spend last quarter?');
 -- Run it again immediately — the second call should return STATUS = 'CACHED'.

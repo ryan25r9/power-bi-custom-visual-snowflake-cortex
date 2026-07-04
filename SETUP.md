@@ -63,7 +63,7 @@ Snowflake admin. It's pre-filled with the right names and creates:
   reminder to rotate it.
 - Prefer a UI? Snowsight > Governance & security > Users & roles > select the user >
   Programmatic access tokens > Generate. For a service user the role restriction is
-  required; set it to `PBI_CORTEX_CHAT_ROLE`.
+  required; set it to `SG_MSU_CORTEX_CHAT_PILOT`.
 - Want to test before the service user exists? Generate a PAT for your own user the
   same way, with the role restriction set to a role that can reach the agent. PATs
   require the user to be under a network policy, so run the smoke test from the

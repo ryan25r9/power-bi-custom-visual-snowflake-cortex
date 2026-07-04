@@ -20,18 +20,18 @@
 --    Keep this role read-only: the chat visual sends report data to the agent,
 --    and the agent runs SQL as this role. A write-capable role here would let a
 --    prompt-injection attempt do real damage; a read-only one can't.
-CREATE ROLE IF NOT EXISTS PBI_CORTEX_CHAT_ROLE;
+CREATE ROLE IF NOT EXISTS SG_MSU_CORTEX_CHAT_PILOT;
 
 -- Cortex entitlement (account-level database role; required to call any
 -- Cortex feature, including agents).
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE PBI_CORTEX_CHAT_ROLE;
+GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 
 -- 2. Access to the agent and everything it touches at query time.
-GRANT USAGE ON DATABASE DBS_ANALYTICS_AI TO ROLE PBI_CORTEX_CHAT_ROLE;
-GRANT USAGE ON SCHEMA DBS_ANALYTICS_AI.SPARTAN_TRENDS_AI TO ROLE PBI_CORTEX_CHAT_ROLE;
-GRANT USAGE ON AGENT DBS_ANALYTICS_AI.SPARTAN_TRENDS_AI.SPARTAN_TRENDS_CA TO ROLE PBI_CORTEX_CHAT_ROLE;
-GRANT REFERENCES, SELECT ON SEMANTIC VIEW DBS_ANALYTICS_AI.SPARTAN_TRENDS_AI.SPARTAN_TRENDS_SV TO ROLE PBI_CORTEX_CHAT_ROLE;
-GRANT USAGE ON WAREHOUSE WHS_SPARTAN_TRENDS_AGENT TO ROLE PBI_CORTEX_CHAT_ROLE;
+GRANT USAGE ON DATABASE DBS_ANALYTICS_AI TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+GRANT USAGE ON SCHEMA DBS_ANALYTICS_AI.SPARTAN_TRENDS_AI TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+GRANT USAGE ON AGENT DBS_ANALYTICS_AI.SPARTAN_TRENDS_AI.SPARTAN_TRENDS_CA TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+GRANT REFERENCES, SELECT ON SEMANTIC VIEW DBS_ANALYTICS_AI.SPARTAN_TRENDS_AI.SPARTAN_TRENDS_SV TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
+GRANT USAGE ON WAREHOUSE WHS_SPARTAN_TRENDS_AGENT TO ROLE SG_MSU_CORTEX_CHAT_PILOT;
 -- If agent queries later fail with "not authorized" on underlying tables, the
 -- role may also need read access to the schema the semantic view sits on top
 -- of. Ask the data owner; don't grant more than SELECT.
@@ -41,10 +41,10 @@ GRANT USAGE ON WAREHOUSE WHS_SPARTAN_TRENDS_AGENT TO ROLE PBI_CORTEX_CHAT_ROLE;
 --    which is why both defaults are set here rather than left to chance.
 CREATE USER IF NOT EXISTS SVC_PBI_CORTEX_CHAT
   TYPE = SERVICE
-  DEFAULT_ROLE = PBI_CORTEX_CHAT_ROLE
+  DEFAULT_ROLE = SG_MSU_CORTEX_CHAT_PILOT
   DEFAULT_WAREHOUSE = WHS_SPARTAN_TRENDS_AGENT
   COMMENT = 'Power BI Cortex chat proxy (Azure Function)';
-GRANT ROLE PBI_CORTEX_CHAT_ROLE TO USER SVC_PBI_CORTEX_CHAT;
+GRANT ROLE SG_MSU_CORTEX_CHAT_PILOT TO USER SVC_PBI_CORTEX_CHAT;
 
 -- 4. Network policy. Service users generally must have one before a PAT will
 --    work. 0.0.0.0/0 gets you through initial testing; tighten it to the Azure
@@ -61,7 +61,7 @@ ALTER USER SVC_PBI_CORTEX_CHAT SET NETWORK_POLICY = PBI_CHAT_PROXY_NP;
 --    It expires after 90 days; rotating it = rerun this with a new name.
 ALTER USER SVC_PBI_CORTEX_CHAT
   ADD PROGRAMMATIC ACCESS TOKEN PBI_CHAT_PAT
-  ROLE_RESTRICTION = 'PBI_CORTEX_CHAT_ROLE'
+  ROLE_RESTRICTION = 'SG_MSU_CORTEX_CHAT_PILOT'
   DAYS_TO_EXPIRY = 90;
 -- If this errors about authentication policy: the account's authentication
 -- policy must permit PATs for service users. Snowsight > Admin > Users also
