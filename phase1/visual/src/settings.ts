@@ -51,7 +51,16 @@ class AgentCard extends formattingSettings.SimpleCard {
         placeholder: "e.g. Dining spend and usage trends by category"
     });
 
-    slices = [this.bindingTable, this.bindingColumn, this.includeContext, this.maxContextRows, this.agentHint];
+    // Agent runs routinely take minutes; this is only the give-up point for the
+    // spinner, not a query timeout — the DirectQuery keeps running regardless.
+    answerTimeout = new formattingSettings.NumUpDown({
+        name: "answerTimeoutSecs",
+        displayName: "Answer timeout (seconds)",
+        description: "How long to wait for the answer before giving up. Agent runs can take several minutes; size this above your slowest observed run.",
+        value: 600
+    });
+
+    slices = [this.bindingTable, this.bindingColumn, this.includeContext, this.maxContextRows, this.agentHint, this.answerTimeout];
 }
 
 export class VisualFormattingSettingsModel extends formattingSettings.Model {

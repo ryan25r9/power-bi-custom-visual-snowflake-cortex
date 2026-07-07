@@ -6,10 +6,12 @@
  *
  *   1. On send, it builds the prompt (question + filtered report context) and
  *      pushes it as a Basic filter onto a hidden "binding" column that a Dynamic
- *      M Query Parameter is bound to (setup in phase1/README.md).
- *   2. That parameter change re-runs the DirectQuery answer query, which CALLs a
- *      Snowflake stored procedure that runs the Cortex agent and returns the
- *      answer as a row of data.
+ *      M Query Parameter is bound to (setup in phase1/README.md). The filter is
+ *      applied at BOTH scopes — selfFilter (so our own query sees it) and the
+ *      page-scope filter (visible in the Filters pane).
+ *   2. That parameter change re-runs the DirectQuery answer query, whose native
+ *      SQL runs the Cortex agent (SNOWFLAKE.CORTEX.DATA_AGENT_RUN) inline and
+ *      returns the answer as a row of data. No Snowflake objects are created.
  *   3. On the next update(), the answer arrives in dataView under the "Answer
  *      text" role; the visual reads it and replaces the pending bubble.
  *
@@ -30,9 +32,9 @@ import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel
 import { VisualFormattingSettingsModel } from "./settings";
 import { buildContextBlock, readAnswerText } from "./contextBuilder";
 
-// If a DirectQuery error leaves no answer row, stop spinning after this long.
-// Agent runs can take many seconds, so keep it generous.
-const ANSWER_TIMEOUT_MS = 180_000;
+// Fallback if the format-pane "Answer timeout (seconds)" setting is unset.
+// Agent runs routinely take minutes (200s+ observed live), so stay generous.
+const DEFAULT_ANSWER_TIMEOUT_SECS = 600;
 
 export class Visual implements IVisual {
     private host: IVisualHost;
@@ -43,6 +45,8 @@ export class Visual implements IVisual {
     private busy = false;
     private pendingBubble?: HTMLElement;
     private waitTimer?: number;
+    private tickTimer?: number;
+    private askedAt = 0;
 
     // DOM
     private root: HTMLElement;
@@ -90,6 +94,7 @@ export class Visual implements IVisual {
 
     public destroy(): void {
         if (this.waitTimer) window.clearTimeout(this.waitTimer);
+        if (this.tickTimer) window.clearInterval(this.tickTimer);
     }
 
     // ---------- ask / answer ----------
@@ -117,36 +122,66 @@ export class Visual implements IVisual {
         // Pending bubble pulses until the answer row returns in update().
         this.pendingBubble = this.addBubble("assistant", "Asking the agent…");
         this.pendingBubble.classList.add("cc-pending");
+        // Elapsed ticker: agent runs take minutes, so show progress or the visual
+        // looks frozen. Cleared in finishTurn().
+        this.askedAt = Date.now();
         this.setStatus("Running in Snowflake — answers arrive all at once (no live typing).");
+        if (this.tickTimer) window.clearInterval(this.tickTimer);
+        this.tickTimer = window.setInterval(() => {
+            const secs = Math.round((Date.now() - this.askedAt) / 1000);
+            this.setStatus(`Running in Snowflake — ${secs}s elapsed. Agent runs can take a few minutes; the answer arrives all at once.`);
+        }, 5000);
 
         // The round-trip: write the prompt as the selected value of the bound
         // column. The Dynamic M parameter picks it up and re-runs the answer query.
-        // The value travels as data (a filter value, then a bound query parameter),
-        // so we do NOT escape it here — the M query must bind it as a parameter,
-        // never concatenate it into SQL (see phase1/README.md).
+        // The value travels as data (a filter value into the M query), so we do
+        // not escape it here — the M query handles quoting (see phase1/README.md).
         const table = this.settings.agentCard.bindingTable.value?.trim() || "PromptBinding";
         const column = this.settings.agentCard.bindingColumn.value?.trim() || "Prompt";
-        // A Basic filter (the slicer-equivalent the Dynamic M parameter accepts).
-        // Built as a literal to avoid the powerbi-models package; the shape is stable.
+        // An ADVANCED "Is" filter — deliberately the exact shape proven to drive the
+        // Dynamic M parameter when applied through the filter pane (a Basic "In" from
+        // this API was observed NOT to reach Snowflake; see README field notes).
         const filter = {
             // eslint-disable-next-line powerbi-visuals/no-http-string -- canonical Power BI filter schema id, not a fetched URL
-            $schema: "http://powerbi.com/product/schema#basic",
+            $schema: "http://powerbi.com/product/schema#advanced",
             target: { table, column },
-            filterType: 1,        // FilterType.Basic
-            operator: "In",
-            values: [prompt]
+            filterType: 0,            // FilterType.Advanced
+            logicalOperator: "And",
+            conditions: [{ operator: "Is", value: prompt }]
         };
-        this.host.applyJsonFilter(filter as powerbi.IFilter, "general", "filter", powerbi.FilterAction.merge);
+        // Apply at two scopes, and SURFACE any host rejection in the transcript —
+        // applyJsonFilter failures are otherwise silent, which made this bug invisible.
+        //   selfFilter -> our own query re-runs with the new parameter value
+        //   filter     -> page scope (other visuals, e.g. a debug table)
+        const surface = (scope: string) => (e: unknown) => {
+            const msg = (e as { message?: string })?.message ?? String(e);
+            this.addActivity(`⚠ ${scope} filter failed: ${msg}`);
+        };
+        for (const scope of ["selfFilter", "filter"] as const) {
+            try {
+                const r = this.host.applyJsonFilter(
+                    filter as powerbi.IFilter, "general", scope, powerbi.FilterAction.merge);
+                (r as unknown as { catch?: (f: (e: unknown) => void) => void })?.catch?.(surface(scope));
+            } catch (e) {
+                surface(scope)(e);
+            }
+        }
 
         // Safety net: if the query errors and no answer row ever lands, stop spinning.
+        // Configurable (Format > Cortex Agent > Answer timeout) because agent runs
+        // legitimately take minutes — a short timeout looks exactly like a broken pipeline.
+        const timeoutSecs = Math.max(30,
+            this.settings.agentCard.answerTimeout.value ?? DEFAULT_ANSWER_TIMEOUT_SECS);
         if (this.waitTimer) window.clearTimeout(this.waitTimer);
         this.waitTimer = window.setTimeout(() => {
-            if (this.busy) this.finishTurn("No answer came back. Check the model refresh / Snowflake connection, then try again.");
-        }, ANSWER_TIMEOUT_MS);
+            if (this.busy) this.finishTurn(
+                `No answer after ${timeoutSecs}s. If Snowflake shows the query still running, raise "Answer timeout" in Format > Cortex Agent and ask again; otherwise check the model wiring / Snowflake connection.`);
+        }, timeoutSecs * 1000);
     }
 
     private finishTurn(answer: string): void {
         if (this.waitTimer) { window.clearTimeout(this.waitTimer); this.waitTimer = undefined; }
+        if (this.tickTimer) { window.clearInterval(this.tickTimer); this.tickTimer = undefined; }
         if (this.pendingBubble) {
             this.pendingBubble.classList.remove("cc-pending");
             this.pendingBubble.textContent = answer;   // textContent only — no HTML injection
@@ -190,6 +225,12 @@ export class Visual implements IVisual {
         b.textContent = text;
         this.scrollDown();
         return b;
+    }
+
+    /** Muted one-liner in the transcript — used to surface otherwise-silent errors. */
+    private addActivity(text: string): void {
+        el("div", "cc-activity", this.messagesEl).textContent = text;
+        this.scrollDown();
     }
 
     private refreshContextChip(): void {

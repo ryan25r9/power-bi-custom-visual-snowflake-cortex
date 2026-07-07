@@ -33,12 +33,14 @@
         "bindingColumn": { "type": { "text": true } },
         "includeContext": { "type": { "bool": true } },
         "maxContextRows": { "type": { "numeric": true } },
-        "agentHint": { "type": { "text": true } }
+        "agentHint": { "type": { "text": true } },
+        "answerTimeoutSecs": { "type": { "numeric": true } }
       }
     },
     "general": {
       "properties": {
-        "filter": { "type": { "filter": true } }
+        "filter": { "type": { "filter": true } },
+        "selfFilter": { "type": { "filter": { "selfFilter": true } } }
       }
     }
   },

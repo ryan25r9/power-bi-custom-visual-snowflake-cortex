@@ -4,7 +4,7 @@
     "displayName": "Snowflake Cortex Chat (M-Query)",
     "guid": "snowflakeCortexChatMQuery0A1B2C3D4E5F",
     "visualClassName": "Visual",
-    "version": "1.0.0.0",
+    "version": "1.0.3.0",
     "description": "Phase 1 demo: ask a Snowflake Cortex Agent from inside a Power BI report with no proxy. The question round-trips through a Dynamic M parameter and a Snowflake stored procedure; the answer comes back as data.",
     "supportUrl": "https://github.com/ryan25r9/power-bi-custom-visual-snowflake-cortex/issues",
     "gitHubUrl": "https://github.com/ryan25r9/power-bi-custom-visual-snowflake-cortex"

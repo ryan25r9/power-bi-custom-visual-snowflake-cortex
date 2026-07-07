@@ -24,7 +24,7 @@ repo root describe Phase 2.**
 
 | Phase | What | Where |
 |---|---|---|
-| **Phase 1** | Quick demo with **no proxy** — the question round-trips through a Dynamic M parameter and a Snowflake stored proc; the answer comes back as data. No streaming, no memory. Throwaway once Phase 2 ships. | [`phase1/`](phase1/README.md) |
+| **Phase 1** | Quick demo with **no proxy and no Snowflake objects** — the question round-trips through a Dynamic M parameter into a native query that runs the agent inline; the answer comes back as data. No streaming, no memory. Throwaway once Phase 2 ships. | [`phase1/`](phase1/README.md) |
 | **Phase 2** | This repo. Azure Function proxy + Service Principal, streaming answers, multi-turn chat. | repo root |
 | **Phase 3** | Per-user Entra passthrough (`AADAuthentication` + External OAuth). Requires AppSource publication. Not built yet; continues from Phase 2. | — |
 

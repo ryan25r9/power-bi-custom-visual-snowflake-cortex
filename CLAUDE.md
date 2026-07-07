@@ -6,7 +6,7 @@ prompt, so the agent sees "what the user is looking at." Built and verified 2026
 never yet run against a live Snowflake account or real Power BI tenant.
 
 **This file describes Phase 2 (repo root).** The repo is multi-phase — see README "Repository phases".
-`phase1/` is a separate, throwaway demo (no proxy; M-parameter round-trip to a Snowflake stored proc)
+`phase1/` is a separate, throwaway demo (no proxy; M-parameter round-trip running the agent inline via native SQL)
 owned by a second developer; it has its own build/gate and does not share code with Phase 2.
 
 ## Map
@@ -20,8 +20,11 @@ owned by a second developer; it has its own build/gate and does not share code w
   MSU's SPARTAN_TRENDS_CA). `deploy.sh` — Azure provisioning (MSU values prefilled).
 - `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 28 unit tests. `PLAN.md` — verification log.
 - `SETUP.md` — handoff runbook for deploying the whole thing; keep it in sync with config changes.
-- `phase1/` — separate Phase 2-throwaway demo (own `visual/`, `snowflake/`, README, gate). Don't touch
-  it for Phase 2 work; CI runs its `phase1/visual/tests/run-tests.sh` + `pbiviz package` independently.
+- `phase1/` — separate Phase 2-throwaway demo (own `visual/`, README, gate; no Snowflake objects —
+  the agent runs inline in the model's M query). NOT WORKING END-TO-END YET: the visual's
+  applyJsonFilter isn't moving the Dynamic M parameter; symptom matrix, eliminated causes, and
+  current hypothesis live in phase1/README.md "Where debugging stands" — read it before touching
+  phase1. Don't touch it for Phase 2 work; CI runs its tests + pbiviz package independently.
 - `.github/workflows/ci.yml`, `.githooks/post-commit`, `CONTRIBUTING.md` — two-dev flow (branch→PR,
   main is PR-only by convention). The post-commit hook pushes the current branch, never main.
 
