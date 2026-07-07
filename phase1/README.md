@@ -70,8 +70,8 @@ These were all hit live against a real tenant. They shape the design below; don'
 
 ## Where debugging stands
 
-Last updated 2026-07-07, visual build **1.0.3.0** (Advanced/`Is` filter + error
-surfacing) built but **not yet tested** in the report.
+Last updated 2026-07-07, visual build **1.0.4.0** (adds host-side diagnostics)
+built but not yet tested.
 
 **Symptom matrix (all verified live):**
 
@@ -79,25 +79,44 @@ surfacing) built but **not yet tested** in the report.
 |---|---|
 | Edit `PromptParameter` Current Value manually in Power Query, refresh | **Works.** Agent runs (~200s), real `ANSWER_TEXT` returns |
 | Filter pane: drag `PromptBinding[Prompt]` onto a plain table's "Filters on this visual", Advanced filtering, `is`, typed value | **Works.** `DATA_AGENT_RUN` appears in Snowflake Query History. Column is in no field well of that table |
-| Click Send in the custom visual (builds ≤ 1.0.2.0, Basic `In` filter) | **Fails.** No query ever appears in Query History — the parameter never moves. Fails even with a 5-character question and report context off |
+| Click Send in the custom visual, Basic `In` filter (builds ≤ 1.0.2.0) | **Fails.** No query ever appears in Query History — the parameter never moves. Fails even with a 5-character question and report context off |
+| Click Send in the custom visual, Advanced `Is` filter (build 1.0.3.0) | **Fails identically.** Still nothing in Query History — so the filter *shape* is not the difference |
 
 **Eliminated (don't re-tread):** the 180s timeout (real issue, fixed via the
 Answer-timeout setting, but irrelevant here — no query is ever issued); the
 "Require user approval for new native database queries" option (off); the
 Model-view Bind-to-parameter (verified set); table/column name mismatches; prompt
-payload size; the "column must be in the visual's field well" theory (refuted by
-the filter-pane test above, which works without it).
+payload size; the filter shape (Basic `In` vs Advanced `Is` behave the same from
+the API); the known `dataPoint`-vs-`general` packaged-visual pitfall (we already
+use `general`).
 
-**Current hypothesis:** either the Basic-`In`-via-API filter shape doesn't drive
-Dynamic M parameter binding the way a pane Advanced-`is` does, or the host is
-rejecting the visual's `applyJsonFilter` calls silently. Build 1.0.3.0 tests both
-at once: it emits the exact Advanced/`Is` shape the pane used, and prints any
-apply-time rejection into the transcript.
+**Two live hypotheses.** H1: the host accepts but silently fails to persist the
+visual's filter. H2: the host persists it, but a filter applied by a visual that
+does NOT have the target column bound in a field well never propagates into any
+query — note every known working filter visual (Text Filter, Filter By List,
+sampleSlicer) binds the field it filters, and the filter-pane test can't refute
+this because pane filters take a different pipeline than visual-applied ones.
 
-**Next actions:** (1) test 1.0.3.0 — watch the transcript for `⚠` lines, Snowflake
-Query History (~30s after Send), and a debug table showing `CortexAnswerQuery`'s
-columns; (2) if still dead, a fresh-eyes review is queued on why API-applied
-filters might not move an M parameter when pane filters do.
+**Build 1.0.4.0 splits H1 vs H2:** on Send it prints `ⓘ <scope> filter
+acknowledged by host` when each applyJsonFilter promise resolves, and every
+update() while a question is in flight prints `ⓘ update type=…, host filter
+state: […]` — which echoes `options.jsonFilters`, i.e. what the host actually
+persisted. Filter echoed back but no Snowflake query → H2 (propagation). Empty
+`[]` echoed → H1 (silent drop).
+
+**A no-build experiment that isolates the readback path:** click Send in the
+visual (starts the spinner), then immediately apply the pane filter (Advanced
+`is`, any question) **on the chat visual itself**. The pane filter is part of the
+chat visual's own query, so if the M parameter moves and the answer renders in
+the bubble, everything except `applyJsonFilter` is proven working end-to-end.
+
+**If H2 is confirmed, the planned pivot:** two-instance design mirroring the
+proven Filter-By-List pattern — an *input* instance with `PromptBinding[Prompt]`
+bound in a field well (filters propagate cross-visual from a visual that owns the
+field) and a *display* instance bound to `ANSWER_TEXT` that renders the
+transcript (it can read the question from `options.jsonFilters`). Single-visual
+selfFilter readback dies under H2 because binding the zero-row column into the
+visual's own projection would blank its query.
 
 ## Build it (in order)
 

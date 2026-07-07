@@ -72,6 +72,14 @@ export class Visual implements IVisual {
             this.dataView = options.dataViews?.[0];
             this.refreshContextChip();
 
+            // DIAGNOSTIC (in-flight only): show what the host says our filter state is.
+            // options.jsonFilters echoes the filters the host has actually persisted for
+            // this visual — the decisive signal for whether applyJsonFilter took effect.
+            if (this.busy) {
+                const echoed = JSON.stringify(options.jsonFilters ?? []);
+                this.addActivity(`ⓘ update type=${options.type}, host filter state: ${echoed.slice(0, 220)}${echoed.length > 220 ? "…" : ""}`);
+            }
+
             // The answer arrives as a fresh data update after our filter re-ran the
             // query. Render it only on a data-bearing update while a question is in
             // flight, so resize/format updates don't trip it.
@@ -160,8 +168,14 @@ export class Visual implements IVisual {
         for (const scope of ["selfFilter", "filter"] as const) {
             try {
                 const r = this.host.applyJsonFilter(
-                    filter as powerbi.IFilter, "general", scope, powerbi.FilterAction.merge);
-                (r as unknown as { catch?: (f: (e: unknown) => void) => void })?.catch?.(surface(scope));
+                    filter as powerbi.IFilter, "general", scope, powerbi.FilterAction.merge) as unknown as {
+                        then?: (f: () => void) => { catch?: (f: (e: unknown) => void) => void };
+                        catch?: (f: (e: unknown) => void) => void;
+                    };
+                // DIAGNOSTIC: positive ack too, so "accepted but ignored" is distinguishable
+                // from "never processed".
+                const chained = r?.then?.(() => this.addActivity(`ⓘ ${scope} filter acknowledged by host`));
+                (chained ?? r)?.catch?.(surface(scope));
             } catch (e) {
                 surface(scope)(e);
             }
