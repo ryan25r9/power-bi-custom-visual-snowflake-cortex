@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource } from "./build/contextBuilder.js";
+import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource, buildPromptFilter } from "./build/contextBuilder.js";
 
 /** Fake DataView. cols: [{displayName, isMeasure?, answer?}]; answer:true tags the answerText role. */
 function makeDataView(cols, rows) {
@@ -133,4 +133,15 @@ test("11. findPromptSource: prefers the categorical source, falls back to metada
     assert.equal(findPromptSource([displayDv(), metaOnly])?.queryName, "PromptBinding.Prompt",
         "scans past dataViews that lack the role");
     assert.equal(findPromptSource([displayDv()]), undefined);
+});
+
+test("12. buildPromptFilter emits the slicer-canonical shape (Basic In, one value, single-select)", () => {
+    const f = buildPromptFilter("PromptBinding", "Prompt", "What changed?");
+    assert.equal(f.$schema, "http://powerbi.com/product/schema#basic");
+    assert.deepEqual(f.target, { table: "PromptBinding", column: "Prompt" });
+    assert.equal(f.filterType, 1, "FilterType.Basic");
+    assert.equal(f.operator, "In");
+    assert.deepEqual(f.values, ["What changed?"]);
+    assert.equal(f.requireSingleSelection, true,
+        "Dynamic M docs require single-select semantics when the binding is Multi-select=No");
 });

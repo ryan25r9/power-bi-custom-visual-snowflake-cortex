@@ -64,12 +64,17 @@ These were all hit live against a real tenant. They shape the design below; don'
 - **`applyJsonFilter` failures are silent.** The returned promise's rejection was
   being dropped; the visual now surfaces any rejection as a muted `⚠ ... filter
   failed` line in the transcript.
-- **Filter shape doesn't matter; where the filter comes from does.** A visual-applied
-  filter (Basic `In` or Advanced `Is` — the host persists both normalized to Basic
-  `In`) never fired the applying visual's own query, while a filter-pane Advanced
-  `is` card on the same visual works fully — pane cards apply to the visual's own
-  query, visual-applied filters don't (previous bullet). The build still emits
-  Advanced/`Is`, the pane-proven shape, for the outbound filter.
+- **Filter shape didn't explain the self-query failure, but it can still disqualify
+  parameter resolution.** A visual-applied filter (Basic `In` or Advanced `Is` — the
+  host persists both normalized to Basic `In` with `requireSingleSelection:false`)
+  never fired the applying visual's own query, while a filter-pane Advanced `is`
+  card on the same visual works fully — pane cards apply to the visual's own query,
+  visual-applied filters don't (previous bullet). Separately, the Dynamic-M docs
+  require **single-select semantics** ("use a single select mode in the slicer, or
+  require single select in the filter card") when the binding is Multi-select = No —
+  so a persisted `requireSingleSelection:false` plausibly disqualifies the filter.
+  Since 1.0.7.0 the build emits the slicer-canonical shape directly: Basic `In`,
+  one value, `requireSingleSelection: true`.
 - **Stale filters are silent test-killers.** `applyJsonFilter(..., merge)` persists
   into the .pbix and nothing ever removed it, so an old question can linger on a
   visual (at either scope) and conflict with the new value — the parameter then can't
@@ -82,9 +87,11 @@ These were all hit live against a real tenant. They shape the design below; don'
 
 ## Where debugging stands
 
-Last updated 2026-07-09, visual build **1.0.6.0** (fixes the defect that
-invalidated the 1.0.5.0 two-instance test; drops `selfFilter`; adds a
-force-input-mode backstop and a filter-clear action). Built, not yet live-tested.
+Last updated 2026-07-09, visual build **1.0.7.0** (1.0.6.0 fixed the defect that
+invalidated the 1.0.5.0 two-instance test, dropped `selfFilter`, and added a
+force-input-mode backstop + a filter-clear action; 1.0.7.0 switches the emitted
+filter to the slicer-canonical Basic `In` + `requireSingleSelection:true` shape).
+Built, not yet live-tested.
 
 **Symptom matrix (all verified live):**
 
@@ -111,13 +118,37 @@ maps to categorical, so a categorical dataView with empty metadata — the
 zero-row-table edge — still detects), and there's a manual **Format → Cortex
 Agent → Force input mode** toggle as the last-resort backstop.
 
-**Working theory (upgraded, consistent with every observation):**
-`applyJsonFilter` at the `general/filter` scope has **slicer semantics — the
-filter applies to every other visual on the page and never to the applier's own
-query.** Pane filter cards DO apply to the visual's own query, which is why the
-hand-applied card worked end to end. `selfFilter` doesn't rescue the
-single-visual design (acknowledged by the host three times, parameter never
-moved — it appears to be a search-style reduction, not a query-context filter).
+**Working theory (upgraded, consistent with every observation — and now
+externally corroborated):** `applyJsonFilter` at the `general/filter` scope has
+**slicer semantics — the filter applies to every other visual on the page and
+never to the applier's own query.** Pane filter cards DO apply to the visual's
+own query, which is why the hand-applied card worked end to end. `selfFilter`
+doesn't rescue the single-visual design (acknowledged by the host three times,
+parameter never moved — it appears to be a search-style reduction, not a
+query-context filter). A 2026-07-09 docs/community research pass confirmed the
+semantics and surfaced one extra qualifier:
+
+- The archived official API reference describes `applyJsonFilter` as passing a
+  filter to the host "for filtering **other** visuals"
+  (microsoft.github.io/PowerBI-visuals/api/references/applyjsonfilter), and
+  community resolutions state it plainly: "the 'filter' argument … filters all
+  visuals **except the current one**; to filter the current visual, 'selfFilter'
+  must be used instead" (stackoverflow.com/questions/76279165). `selfFilter`
+  exists only in the capabilities schema — no Learn docs; whether it can drive a
+  Dynamic-M parameter was publicly untested before our three live failures.
+- The Dynamic-M docs (learn.microsoft.com/power-bi/connect-data/desktop-dynamic-m-query-parameters)
+  never mention the visual filter API in either direction, but Chris Webb's post
+  on this exact architecture recommends the **Filter By List custom visual** for
+  feeding arbitrary values to a bound parameter — implying API-applied filters
+  *can* drive parameters in *other* visuals' queries (blog.crossjoin.co.uk,
+  2023-01-29). No public end-to-end proof either way.
+- The same docs require **single-select semantics** when the binding is
+  Multi-select = No ("use a single select mode in the slicer, or require single
+  select in the filter card"). The host persisted our filters with
+  `requireSingleSelection:false` — a plausible disqualifier even in a correct
+  two-instance setup, closed off in 1.0.7.0 by emitting Basic `In` + one value +
+  `requireSingleSelection:true` (exactly what a single-select slicer produces).
+
 Consequences:
 
 - A **single-visual** chat can never fire its own DirectQuery. Test A could not
@@ -164,12 +195,12 @@ question>` within seconds, and Query History shows the trivial `SELECT`. Every
 send is near-free, so you can iterate on the visual side rapidly and only run
 the real agent once the echo works.
 
-### The 1.0.6.0 test (two instances, clean slate)
+### The 1.0.7.0 test (two instances, clean slate)
 
 1. **Clean slate.** Delete ALL old chat-visual instances from the page (this
    purges their stale persisted filters), remove any `Prompt` cards from the
    filter pane (including an inert-looking `is (All)`), then import
-   `dist/...1.0.6.0.pbiviz`.
+   `dist/...1.0.7.0.pbiviz`.
 2. **Swap in the echo probe** above.
 3. **Display instance:** bind `CortexAnswerQuery[ANSWER_TEXT]` to **Answer
    text** (context fields optional). **Input instance:** a second copy with

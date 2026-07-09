@@ -109,6 +109,26 @@ export function findPromptSource(dataViews: DataView[] | undefined): powerbi.Dat
     return undefined;
 }
 
+/**
+ * The outbound prompt filter — the EXACT shape the documented Dynamic-M driver
+ * (a single-select slicer) produces: Basic "In", one value, requireSingleSelection
+ * true. The docs require single-select semantics when the parameter binding is
+ * Multi-select = No, and the host was observed persisting our earlier Advanced
+ * "Is" normalized to Basic "In" with requireSingleSelection FALSE — which
+ * plausibly disqualifies the filter from parameter resolution.
+ */
+export function buildPromptFilter(table: string, column: string, value: string): powerbi.IFilter {
+    return {
+        // eslint-disable-next-line powerbi-visuals/no-http-string -- canonical Power BI filter schema id, not a fetched URL
+        $schema: "http://powerbi.com/product/schema#basic",
+        target: { table, column },
+        filterType: 1,            // FilterType.Basic
+        operator: "In",
+        values: [value],
+        requireSingleSelection: true
+    } as unknown as powerbi.IFilter;
+}
+
 /** First non-empty value in the column bound to the "Answer text" role, or null. */
 export function readAnswerText(dataView: DataView | undefined): string | null {
     const table = dataView?.table;

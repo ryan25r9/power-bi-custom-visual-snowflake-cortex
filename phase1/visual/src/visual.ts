@@ -32,7 +32,7 @@ import DataView = powerbi.DataView;
 
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import { VisualFormattingSettingsModel } from "./settings";
-import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource } from "./contextBuilder";
+import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource, buildPromptFilter } from "./contextBuilder";
 
 // Fallback if the format-pane "Answer timeout (seconds)" setting is unset.
 // Agent runs routinely take minutes (200s+ observed live), so stay generous.
@@ -164,7 +164,7 @@ export class Visual implements IVisual {
         // The value travels as data (a filter value into the M query), so we do
         // not escape it here — the M query handles quoting (see phase1/README.md).
         const { table, column } = this.promptTarget();
-        const filter = this.buildPromptFilter(table, column, prompt);
+        const filter = buildPromptFilter(table, column, prompt);
         // Outbound scope ONLY. A visual's applied filter never enters its own query
         // (slicer semantics — three live tests), so selfFilter buys nothing; worse,
         // builds ≤1.0.5.0 left stale selfFilters (an old question) persisted on this
@@ -242,22 +242,6 @@ export class Visual implements IVisual {
     }
 
     /**
-     * ADVANCED "Is" — the exact shape proven to drive the Dynamic M parameter when
-     * created through the filter pane. (The host persists it normalized to Basic
-     * "In"; emitting Basic directly made no difference in live tests.)
-     */
-    private buildPromptFilter(table: string, column: string, value: string): powerbi.IFilter {
-        return {
-            // eslint-disable-next-line powerbi-visuals/no-http-string -- canonical Power BI filter schema id, not a fetched URL
-            $schema: "http://powerbi.com/product/schema#advanced",
-            target: { table, column },
-            filterType: 0,            // FilterType.Advanced
-            logicalOperator: "And",
-            conditions: [{ operator: "Is", value }]
-        } as unknown as powerbi.IFilter;
-    }
-
-    /**
      * applyJsonFilter with the outcome surfaced in the transcript — rejections are
      * otherwise completely silent (which is what made this bug invisible), and the
      * positive ack distinguishes "accepted but ignored" from "never processed".
@@ -285,7 +269,7 @@ export class Visual implements IVisual {
     /** Empty Send: remove this visual's persisted prompt filters at both scopes. */
     private clearPromptFilters(): void {
         const { table, column } = this.promptTarget();
-        const f = this.buildPromptFilter(table, column, "");
+        const f = buildPromptFilter(table, column, "");
         this.applyFilter(f, "filter", powerbi.FilterAction.remove);
         this.applyFilter(f, "selfFilter", powerbi.FilterAction.remove, true);
         this.lastSendAt = Date.now();
