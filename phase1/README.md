@@ -156,7 +156,9 @@ semantics and surfaced one extra qualifier:
   on this exact architecture recommends the **Filter By List custom visual** for
   feeding arbitrary values to a bound parameter — implying API-applied filters
   *can* drive parameters in *other* visuals' queries (blog.crossjoin.co.uk,
-  2023-01-29). No public end-to-end proof either way.
+  2023-01-29). No public end-to-end proof either way — and Filter By List itself
+  is unusable for us (org-blocked; recent AppSource reviews report it broken),
+  so it stands as evidence, not a tool.
 - The same docs require **single-select semantics** when the binding is
   Multi-select = No ("use a single select mode in the slicer, or require single
   select in the filter card"). The host persisted our filters with
@@ -251,17 +253,27 @@ the real agent once the echo works.
    - **Performance Analyzer** (View ribbon): refresh the display instance and
      inspect its query — a `DEFINE MPARAMETER` carrying the typed question
      means the filter reached the query and the problem is downstream.
-   - **Tie-breaker (~3 min): the Filter By List visual** (AppSource, DevScope —
-     not Microsoft's Text Filter, whose `Contains` is on the unsupported-ops
-     list). Drop it on the page, bind `PromptBinding[Prompt]` to it, paste the
-     question, Apply, watch Query History. If Filter By List moves the
-     parameter where ours didn't, the API path works in this report and our
-     visual's filter is defective — compare its persisted filter (funnel icon)
-     against our `ⓘ` echo. If it ALSO fails, no custom-visual filter drives
-     Dynamic M here, and the free-text design is dead: fall back to the
-     **suggested-questions** flavor — pre-populate `PromptBinding` with curated
-     questions and let a native single-select slicer drive the parameter
-     (100% documented mechanics), display instance unchanged.
+   - **Binding-health control (~3 min): a native slicer.** (The Filter By List
+     visual would have been the API-path control, but it's unusable here —
+     org-blocked, and recent AppSource reviews report it broken. Microsoft's
+     Text Filter is no substitute: it emits `Contains`, which is on the
+     Dynamic-M unsupported-operations list.) First click Send with an **empty
+     box** on the input instance to clear its filter (a leftover value would
+     conflict with the slicer's and stall the parameter). Then in Power Query
+     give `PromptBinding` one temporary row —
+     `#table(type table [Prompt = text], {{"CONTROL QUESTION 123"}})` —
+     Close & Apply, add a **native Slicer** on `PromptBinding[Prompt]`, and
+     click the value. `ECHO: CONTROL QUESTION 123` appearing in the display
+     instance proves the binding → parameter → DirectQuery chain is healthy,
+     which isolates the failure to API-applied filters — the free-text design
+     is then dead, and the **suggested-questions fallback** (pre-populate
+     `PromptBinding` with curated questions; a native single-select slicer
+     drives the parameter; display instance unchanged) is *already proven by
+     this very control*. No echo from the slicer either = the parameter
+     binding itself is broken in this .pbix — recreate the binding in a fresh
+     file (a known, never-explained community failure bucket) before
+     concluding anything. Afterwards revert `PromptBinding` to zero rows
+     (`{}`) and delete the slicer.
 
 **Also since 1.0.5.0:** the prompt ends with a plain-text formatting
 instruction, because the agent returned a markdown table and the visual
