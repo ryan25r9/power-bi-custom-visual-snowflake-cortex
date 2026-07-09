@@ -53,7 +53,6 @@ export class Visual implements IVisual {
     private lastSendAt = 0;        // diagnostics window — echo host filter state after any send
     private inputMode = false;     // true when only the promptField role is bound (input-only instance)
     private lastAnswer = "";       // last rendered answer, so unrelated updates don't re-render it
-    private seenFirstData = false; // baseline the stale answer present at report open
 
     // DOM
     private root: HTMLElement;
@@ -97,19 +96,28 @@ export class Visual implements IVisual {
             }
 
             // The answer arrives as a fresh data update after the filter re-ran the query.
-            // Render it whenever a NEW answer shows up — whether this instance asked the
-            // question (busy) or a separate input instance did. The first data update
-            // only baselines lastAnswer, so a stale answer isn't re-rendered at open.
+            // Render ANY new non-empty answer — whether this instance asked the question,
+            // a separate input instance did, or the answer was already in flight when this
+            // instance initialized. Desktop RECREATES visuals on every Power Query
+            // Close & Apply, so the old "baseline the first data update" guard (≤1.0.8.0)
+            // swallowed exactly the answer it was waiting for (proven live: the answer
+            // rendered in a native debug table while the chat stayed silent). Quiet
+            // report-opens are the idle sentinel's job (__no_prompt__ → NULL answer),
+            // not a baseline's.
+            // Accepted edges: a transiently-empty dataview resets the dedupe, so the same
+            // answer can re-render once (cosmetic); two different questions with
+            // byte-identical answers dedupe silently — a per-send reset would let a stale
+            // mid-flight data update falsely complete the new turn, which is worse.
             const isDataUpdate = (options.type & powerbi.VisualUpdateType.Data) !== 0;
             if (!this.inputMode && isDataUpdate) {
                 const answer = readAnswerText(this.dataView);
-                if (!this.seenFirstData) {
-                    this.seenFirstData = true;
-                    if (!this.busy) this.lastAnswer = answer ?? "";
-                }
                 if (answer && answer !== this.lastAnswer) {
                     this.lastAnswer = answer;
                     this.finishTurn(answer);
+                } else if (!answer) {
+                    // IDLE row (filters cleared / parameter back to the sentinel):
+                    // reset the dedupe so re-asking the same question renders again.
+                    this.lastAnswer = "";
                 }
             }
 

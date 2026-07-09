@@ -8,10 +8,13 @@ minutes), and no conversation memory.
 The look is the same as the Phase 2 visual — same bubbles, same context chip — minus
 the streaming cursor and the Stop button.
 
-> **Status: not working end-to-end yet.** The model-side plumbing is proven (manual
-> tests reach Snowflake and return answers), but the visual's filter is not moving
-> the parameter. See [Where debugging stands](#where-debugging-stands) before
-> touching anything.
+> **Status: mechanism PROVEN, final confirmation pending.** Round 3 (2026-07-09,
+> build 1.0.8.0) demonstrated the full chain live: a question typed in the input
+> instance moved the Dynamic M parameter and the display instance rendered the
+> result — the applyJsonFilter → parameter link that blocked builds 1.0.0–1.0.5
+> works under the two-instance design. One last-mile bug remained (the display
+> visual swallowed the real agent answer after a Power Query Close & Apply;
+> fixed in 1.0.9.0) — see [Where debugging stands](#where-debugging-stands).
 
 ## How it works
 
@@ -96,15 +99,44 @@ These were all hit live against a real tenant. They shape the design below; don'
 
 ## Where debugging stands
 
-Last updated 2026-07-09, visual build **1.0.8.0** (1.0.6.0 fixed the defect that
-invalidated the 1.0.5.0 two-instance test, dropped `selfFilter`, and added a
-force-input-mode backstop + a filter-clear action; 1.0.7.0 switched the emitted
-filter to the slicer-canonical Basic `In` + `requireSingleSelection:true` shape;
-1.0.8.0 removed the dead promise-chain "ack" diagnostics — `applyJsonFilter`
-returns `void` — and neutralizes `$$` in the prompt). Built, not yet live-tested.
-A second independent (LLM) review of the 1.0.3.0-era code corroborated the
-slicer-semantics theory and contributed the dead-ack finding, the `$$` hazard,
-the Query-reduction check, and the Filter By List tie-breaker below.
+Last updated 2026-07-09, visual build **1.0.9.0**.
+
+**ROUND 3 (1.0.8.0, live): THE MECHANISM WORKS.** With the echo probe in place,
+a question typed in the input instance rendered as `ECHO: <question>` in the
+display instance — `applyJsonFilter` → Dynamic M parameter → DirectQuery →
+dataView, end to end. The two-instance design (plus the slicer-canonical
+filter shape) is the fix; per-change attribution between the 1.0.6.0–1.0.8.0
+changes (exclusive mappings, outbound-only + stale-filter clearing,
+`requireSingleSelection:true`) is unknown and doesn't matter — keep them all.
+The native-slicer control also passed (agent ran off a slicer selection),
+independently proving the binding AND the suggested-questions fallback.
+
+**Round 3's residual bug (fixed in 1.0.9.0):** after swapping the real agent
+query back in (Close & Apply), real answers rendered in a native debug table
+but NOT in the chat visual. Root cause: Desktop **recreates visuals on every
+Close & Apply**, and builds ≤ 1.0.8.0 deliberately swallowed the first data
+update after construction (a "baseline" meant to suppress stale answers at
+report open) — so the freshly recreated display instance ate exactly the
+answer it was waiting for. The echo test passed under the same buggy code only
+because the echo query is *instant*: the one-shot baseline was consumed by a
+stale row seconds after (re)creation, before the tester typed — whereas the
+3-minute agent query guarantees the recreated instance's first data update IS
+the awaited answer. 1.0.9.0 renders any *new* non-empty answer (deduped, dedupe
+reset when the answer column goes back to NULL/IDLE); quiet report-opens are
+the `__no_prompt__` idle sentinel's job.
+Consequence of the new behavior: a .pbix saved with a live question in the
+parameter will render that answer once on open — correct for a data-bound
+visual.
+
+**Build lineage:** 1.0.6.0 fixed the overlapping-mappings defect that
+invalidated the 1.0.5.0 test, dropped `selfFilter`, added the force-input-mode
+backstop + filter-clear; 1.0.7.0 switched to Basic `In` +
+`requireSingleSelection:true`; 1.0.8.0 removed dead promise-chain "ack"
+diagnostics (`applyJsonFilter` returns `void`) and neutralized `$$` in the
+prompt; 1.0.9.0 removed the first-data-update baseline. A second independent
+(LLM) review of the 1.0.3.0-era code corroborated the slicer-semantics theory
+and contributed the dead-ack finding, the `$$` hazard, and the
+Query-reduction check.
 
 **Symptom matrix (all verified live):**
 
@@ -117,6 +149,9 @@ the Query-reduction check, and the Filter By List tie-breaker below.
 | Send in the visual (arms the spinner), then hand-apply the same filter via the pane **on the chat visual itself** | **Full success.** Agent ran and the answer **rendered in the chat bubble** — parameter, M, Snowflake, dataView readback, and render-while-busy all proven |
 | 1.0.5.0 "Test A": `PromptBinding[Prompt]` in the new well **on the same visual** (Answer text still bound), Send | **Fails identically.** Filter persisted (echo again Basic `In`), no query, 600s timeout. Having the field in a well doesn't make the visual's own query honor its own filter |
 | 1.0.5.0 "Test B": second instance with only Prompt bound | **Invalid — never ran.** The instance stayed in display mode ("no context fields bound" chip, not "input mode"), and removing Answer text popped Desktop's "an error occurred while rendering the report". Root cause found in OUR capabilities.json — see below |
+| 1.0.8.0 Round 3: input instance + echo probe | **WORKS.** `ECHO: <question>` rendered in the display instance seconds after Send — the visual's filter drives the parameter |
+| 1.0.8.0 Round 3: real agent query swapped back (Close & Apply), questions asked | **Agent ran, chat stayed silent.** The answer rendered in a native debug table bound to `CortexAnswerQuery` but never in the chat visual — render-side bug, fixed in 1.0.9.0 (see above) |
+| 1.0.8.0 Round 3: native slicer on a one-row `PromptBinding` | **Works.** Slicer selection ran the agent end to end — binding healthy, suggested-questions fallback proven viable |
 
 **Root cause of the Test B failure (fixed in 1.0.6.0):** the two
 `dataViewMappings` condition sets **overlapped** — with only the prompt field
@@ -223,57 +258,30 @@ question>` within seconds, and Query History shows the trivial `SELECT`. Every
 send is near-free, so you can iterate on the visual side rapidly and only run
 the real agent once the echo works.
 
-### The 1.0.8.0 test (two instances, clean slate)
+### Round 4 confirmation (1.0.9.0 — expected to be the last)
 
-1. **Clean slate.** Delete ALL old chat-visual instances from the page (this
-   purges their stale persisted filters), remove any filter-pane cards
-   targeting `PromptBinding[Prompt]` at any scope if one exists, then import
-   `dist/...1.0.8.0.pbiviz`. Also check **File → Options → Query reduction**:
-   everything OFF (no "Apply" buttons on slicers/filter pane) — enabled, it
-   defers filter changes and could hold API-applied filters too.
-2. **Swap in the echo probe** above.
-3. **Display instance:** bind `CortexAnswerQuery[ANSWER_TEXT]` to **Answer
-   text** and — for this round — leave **Context fields empty** (fact-table
-   columns and the `CortexAnswerQuery` island share one table query; keep that
-   variable out until the mechanism is proven). **Input instance:** a second
-   copy with ONLY `PromptBinding[Prompt]` in **Prompt binding field** — its
-   chip must read **"input mode"** (if not, flip Format → Cortex Agent →
-   Force input mode).
-4. Type a **unique** question in the input instance, Send. Expect within
-   seconds: `ECHO: <question>` in the display instance. The input instance's
-   transcript echoes what the host actually persisted (`ⓘ` lines) for two
-   minutes after each send — an empty `[]` there means the filter wasn't even
-   stored.
-5. If the echo works: restore the real query definition (Build it → step 2 →
-   Step 3), ask a real question, allow
-   minutes — that's the full pipeline.
-6. If the echo does NOT arrive, discriminate in this order:
-   - **Query History**: probe `SELECT` present → the parameter moved and only
-     readback failed; absent → the parameter never moved.
-   - **Performance Analyzer** (View ribbon): refresh the display instance and
-     inspect its query — a `DEFINE MPARAMETER` carrying the typed question
-     means the filter reached the query and the problem is downstream.
-   - **Binding-health control (~3 min): a native slicer.** (The Filter By List
-     visual would have been the API-path control, but it's unusable here —
-     org-blocked, and recent AppSource reviews report it broken. Microsoft's
-     Text Filter is no substitute: it emits `Contains`, which is on the
-     Dynamic-M unsupported-operations list.) First click Send with an **empty
-     box** on the input instance to clear its filter (a leftover value would
-     conflict with the slicer's and stall the parameter). Then in Power Query
-     give `PromptBinding` one temporary row —
-     `#table(type table [Prompt = text], {{"CONTROL QUESTION 123"}})` —
-     Close & Apply, add a **native Slicer** on `PromptBinding[Prompt]`, and
-     click the value. `ECHO: CONTROL QUESTION 123` appearing in the display
-     instance proves the binding → parameter → DirectQuery chain is healthy,
-     which isolates the failure to API-applied filters — the free-text design
-     is then dead, and the **suggested-questions fallback** (pre-populate
-     `PromptBinding` with curated questions; a native single-select slicer
-     drives the parameter; display instance unchanged) is *already proven by
-     this very control*. No echo from the slicer either = the parameter
-     binding itself is broken in this .pbix — recreate the binding in a fresh
-     file (a known, never-explained community failure bucket) before
-     concluding anything. Afterwards revert `PromptBinding` to zero rows
-     (`{}`) and delete the slicer.
+Round 3 proved the mechanism (see the matrix); this round only confirms the
+1.0.9.0 render fix against a real agent run.
+
+Prep (offline-safe): import `dist/...1.0.9.0.pbiviz` (replaces the old build —
+same GUID, bindings survive); `CortexAnswerQuery` holds the REAL agent
+definition (Build it → step 2 → Step 3); `PromptBinding` back to zero rows
+(`{}`); any control slicer deleted; `PromptParameter` Current Value
+`__no_prompt__`; the two instances bound as in §3 (Context fields still empty
+until this passes). Keep a native table on `CortexAnswerQuery`'s three columns
+on the page — it's the canary that separates "agent/model problem" from
+"visual render problem".
+
+Test (needs Snowflake): one never-used question in the input instance → Send →
+allow 2–4 minutes → the answer appears in the display instance's bubble. If
+the canary table fills but the bubble doesn't: first check the display visual
+for a host error icon/overlay (a visual-level query error can't be rendered
+through), then capture a screenshot of both visuals plus the *input*
+instance's `ⓘ` lines (the display instance doesn't print them — it never
+sends). If NOTHING fills, fall back to the echo probe above and the Round 3
+discrimination steps (Query History → Performance Analyzer `DEFINE MPARAMETER`
+→ native-slicer binding control with a one-row `PromptBinding`). When done,
+**clear with an empty-box Send before saving** (see Gotchas).
 
 **Also since 1.0.5.0:** the prompt ends with a plain-text formatting
 instruction, because the agent returned a markdown table and the visual
@@ -500,6 +508,11 @@ transcript also echoes what the host actually persisted (`ⓘ` lines).
   cache table would need Snowflake objects; Phase 1 deliberately creates none).
   Asking the *exact* same question twice in a row may also not produce a new data
   update — change the question or a filter.
+- **Clear before you save.** The input instance's outbound prompt filter persists
+  in the .pbix. A file saved with a live question re-runs the full (billable,
+  ~3-minute) agent query on every open — and since 1.0.9.0 renders that stale
+  answer as an unprompted bubble. Send with an **empty box** (clears the filter,
+  parameter back to `__no_prompt__`) before saving or sharing the file.
 - **Charts/tables.** Phase 1 renders text answers (plus the agent's SQL when the
   response includes it). Rich charts/tables were intentionally dropped; that's
   Phase 2 territory.

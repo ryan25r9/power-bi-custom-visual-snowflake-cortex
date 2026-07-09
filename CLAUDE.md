@@ -21,10 +21,12 @@ owned by a second developer; it has its own build/gate and does not share code w
 - `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 28 unit tests. `PLAN.md` — verification log.
 - `SETUP.md` — handoff runbook for deploying the whole thing; keep it in sync with config changes.
 - `phase1/` — separate Phase 2-throwaway demo (own `visual/`, README, gate; no Snowflake objects —
-  the agent runs inline in the model's M query). NOT WORKING END-TO-END YET: the visual's
-  applyJsonFilter isn't moving the Dynamic M parameter; symptom matrix, eliminated causes, and
-  current hypothesis live in phase1/README.md "Where debugging stands" — read it before touching
-  phase1. Don't touch it for Phase 2 work; CI runs its tests + pbiviz package independently.
+  the agent runs inline in the model's M query). MECHANISM PROVEN LIVE 2026-07-09: the two-instance
+  design works (input instance's applyJsonFilter drives the Dynamic M parameter; single-visual is
+  impossible — a visual's filter never applies to its own query). A last-mile render bug was fixed
+  in 1.0.9.0, awaiting one live confirmation round. History, symptom matrix, and the Round 4
+  protocol live in phase1/README.md "Where debugging stands" — read it before touching phase1.
+  Don't touch it for Phase 2 work; CI runs its tests + pbiviz package independently.
 - `.github/workflows/ci.yml`, `.githooks/post-commit`, `CONTRIBUTING.md` — two-dev flow (branch→PR,
   main is PR-only by convention). The post-commit hook pushes the current branch, never main.
 
