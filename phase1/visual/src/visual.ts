@@ -158,6 +158,10 @@ export class Visual implements IVisual {
         // The visual renders plain text only (textContent — the XSS posture), so ask
         // the agent not to send markdown it can't display.
         prompt += "\n\nFormat the answer as plain sentences. Do not use markdown formatting or markdown tables.";
+        // The M query inlines the prompt inside a $$...$$ literal; a literal "$$"
+        // anywhere in it (question or context cell values) would terminate the
+        // literal and break the SQL. Transport constraint, not sanitization.
+        prompt = prompt.replace(/\$\$/g, "$ $");
 
         // The round-trip: write the prompt as the selected value of the bound
         // column. The Dynamic M parameter picks it up and re-runs the answer query.
@@ -170,7 +174,7 @@ export class Visual implements IVisual {
         // builds ≤1.0.5.0 left stale selfFilters (an old question) persisted on this
         // visual, poisoning its own filter context with a conflicting value. Clear
         // that scope on every send, then merge the new outbound filter.
-        this.applyFilter(filter, "selfFilter", powerbi.FilterAction.remove, true);
+        this.applyFilter(filter, "selfFilter", powerbi.FilterAction.remove);
         this.applyFilter(filter, "filter", powerbi.FilterAction.merge);
 
         // Input-only instance: it never receives the answer (that lands in the display
@@ -242,27 +246,20 @@ export class Visual implements IVisual {
     }
 
     /**
-     * applyJsonFilter with the outcome surfaced in the transcript — rejections are
-     * otherwise completely silent (which is what made this bug invisible), and the
-     * positive ack distinguishes "accepted but ignored" from "never processed".
+     * applyJsonFilter with synchronous throws surfaced in the transcript. The API
+     * returns VOID (not a promise) — asynchronous rejections are swallowed by
+     * design, so the only positive observable is the options.jsonFilters echo on
+     * subsequent updates (the ⓘ lines). Earlier builds chained .then/.catch here;
+     * that was dead code and its "acknowledged by host" lines could never print.
      */
     private applyFilter(filter: powerbi.IFilter, scope: "filter" | "selfFilter",
-        action: powerbi.FilterAction, quiet = false): void {
+        action: powerbi.FilterAction): void {
         const label = `${scope}${action === powerbi.FilterAction.remove ? " clear" : ""}`;
-        const surface = (e: unknown) => {
+        try {
+            this.host.applyJsonFilter(filter, "general", scope, action);
+        } catch (e) {
             const msg = (e as { message?: string })?.message ?? String(e);
             this.addActivity(`⚠ ${label} failed: ${msg}`);
-        };
-        try {
-            const r = this.host.applyJsonFilter(filter, "general", scope, action) as unknown as {
-                then?: (f: () => void) => { catch?: (f: (e: unknown) => void) => void };
-                catch?: (f: (e: unknown) => void) => void;
-            };
-            const chained = quiet ? undefined
-                : r?.then?.(() => this.addActivity(`ⓘ ${label} acknowledged by host`));
-            (chained ?? r)?.catch?.(surface);
-        } catch (e) {
-            surface(e);
         }
     }
 
@@ -271,7 +268,7 @@ export class Visual implements IVisual {
         const { table, column } = this.promptTarget();
         const f = buildPromptFilter(table, column, "");
         this.applyFilter(f, "filter", powerbi.FilterAction.remove);
-        this.applyFilter(f, "selfFilter", powerbi.FilterAction.remove, true);
+        this.applyFilter(f, "selfFilter", powerbi.FilterAction.remove);
         this.lastSendAt = Date.now();
         this.addActivity("Prompt filters cleared for this visual (Send with an empty box does this).");
     }

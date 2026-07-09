@@ -54,16 +54,19 @@ These were all hit live against a real tenant. They shape the design below; don'
 - **A visual's applied filter doesn't filter the visual itself.** `applyJsonFilter`
   has slicer semantics: it filters every *other* visual on the page, never the
   applier's own query. The `selfFilter` scope does NOT rescue this — three live
-  tests applied it (host acknowledged each time) and the parameter never moved.
-  Hence the two-instance design: an input-only instance sends, a display instance
-  (Answer text bound) receives. 1.0.6.0 stopped applying `selfFilter` and actively
-  clears stale ones left by earlier builds.
+  tests applied it (no synchronous error) and the parameter never moved. Hence the
+  two-instance design: an input-only instance sends, a display instance (Answer
+  text bound) receives. 1.0.6.0 stopped applying `selfFilter` and actively clears
+  stale ones left by earlier builds.
 - **Agent runs take minutes, not seconds** — 200s observed for a single question.
   The visual's give-up point is the Format-pane **Answer timeout** setting
   (default 600s); a too-short timeout looks exactly like a broken pipeline.
-- **`applyJsonFilter` failures are silent.** The returned promise's rejection was
-  being dropped; the visual now surfaces any rejection as a muted `⚠ ... filter
-  failed` line in the transcript.
+- **`applyJsonFilter` failures are silent — and it returns `void`, not a promise.**
+  Builds ≤ 1.0.7.0 chained `.then/.catch` on it; that was dead code (optional
+  chaining made it a silent no-op), so their "ⓘ … acknowledged by host" lines never
+  printed and never could. The only real observables: a synchronous validation
+  throw (surfaced as `⚠ … failed`) and the `options.jsonFilters` echo on
+  subsequent updates (the `ⓘ` lines).
 - **Filter shape didn't explain the self-query failure, but it can still disqualify
   parameter resolution.** A visual-applied filter (Basic `In` or Advanced `Is` — the
   host persists both normalized to Basic `In` with `requireSingleSelection:false`)
@@ -75,23 +78,33 @@ These were all hit live against a real tenant. They shape the design below; don'
   so a persisted `requireSingleSelection:false` plausibly disqualifies the filter.
   Since 1.0.7.0 the build emits the slicer-canonical shape directly: Basic `In`,
   one value, `requireSingleSelection: true`.
+- **The prompt travels inside a `$$...$$` literal**, so a literal `$$` anywhere in
+  the question (or in a context cell value) would terminate the literal and break
+  the SQL. Since 1.0.8.0 the visual neutralizes `$$` → `$ $` before applying the
+  filter — a transport constraint, not sanitization.
 - **Stale filters are silent test-killers.** `applyJsonFilter(..., merge)` persists
   into the .pbix and nothing ever removed it, so an old question can linger on a
   visual (at either scope) and conflict with the new value — the parameter then can't
   resolve to a single value and nothing fires. Same for leftover pane cards like
-  `Prompt is (All)`, and for repeating the same question text (the DirectQuery cache
-  serves it — no new Snowflake query, which reads as a false negative). Test protocol:
-  fresh visuals, unique question text every run.
+  leftover pane cards targeting the binding column, and for repeating the same
+  question text (the DirectQuery cache serves it — no new Snowflake query, which
+  reads as a false negative). Test protocol: fresh visuals, unique question text
+  every run. (A pane card reading `is (All)` seen during the 1.0.5.0 round was an
+  unrelated field, not `PromptBinding[Prompt]` — it played no part in that failure.)
 - Verify the round-trip **in the Power BI Service**, not just Desktop — the
   dynamic-data-source refresh restriction only bites in the Service.
 
 ## Where debugging stands
 
-Last updated 2026-07-09, visual build **1.0.7.0** (1.0.6.0 fixed the defect that
+Last updated 2026-07-09, visual build **1.0.8.0** (1.0.6.0 fixed the defect that
 invalidated the 1.0.5.0 two-instance test, dropped `selfFilter`, and added a
-force-input-mode backstop + a filter-clear action; 1.0.7.0 switches the emitted
-filter to the slicer-canonical Basic `In` + `requireSingleSelection:true` shape).
-Built, not yet live-tested.
+force-input-mode backstop + a filter-clear action; 1.0.7.0 switched the emitted
+filter to the slicer-canonical Basic `In` + `requireSingleSelection:true` shape;
+1.0.8.0 removed the dead promise-chain "ack" diagnostics — `applyJsonFilter`
+returns `void` — and neutralizes `$$` in the prompt). Built, not yet live-tested.
+A second independent (LLM) review of the 1.0.3.0-era code corroborated the
+slicer-semantics theory and contributed the dead-ack finding, the `$$` hazard,
+the Query-reduction check, and the Filter By List tie-breaker below.
 
 **Symptom matrix (all verified live):**
 
@@ -123,9 +136,11 @@ externally corroborated):** `applyJsonFilter` at the `general/filter` scope has
 **slicer semantics — the filter applies to every other visual on the page and
 never to the applier's own query.** Pane filter cards DO apply to the visual's
 own query, which is why the hand-applied card worked end to end. `selfFilter`
-doesn't rescue the single-visual design (acknowledged by the host three times,
+doesn't rescue the single-visual design (applied without error three times,
 parameter never moved — it appears to be a search-style reduction, not a
-query-context filter). A 2026-07-09 docs/community research pass confirmed the
+query-context filter; note the pane-card success proves a true query-context
+filter on this column works *without* projection, so if `selfFilter` behaved
+like one, it would have fired). A 2026-07-09 docs/community research pass confirmed the
 semantics and surfaced one extra qualifier:
 
 - The archived official API reference describes `applyJsonFilter` as passing a
@@ -195,33 +210,46 @@ question>` within seconds, and Query History shows the trivial `SELECT`. Every
 send is near-free, so you can iterate on the visual side rapidly and only run
 the real agent once the echo works.
 
-### The 1.0.7.0 test (two instances, clean slate)
+### The 1.0.8.0 test (two instances, clean slate)
 
 1. **Clean slate.** Delete ALL old chat-visual instances from the page (this
-   purges their stale persisted filters), remove any `Prompt` cards from the
-   filter pane (including an inert-looking `is (All)`), then import
-   `dist/...1.0.7.0.pbiviz`.
+   purges their stale persisted filters), remove any filter-pane cards
+   targeting `PromptBinding[Prompt]` at any scope if one exists, then import
+   `dist/...1.0.8.0.pbiviz`. Also check **File → Options → Query reduction**:
+   everything OFF (no "Apply" buttons on slicers/filter pane) — enabled, it
+   defers filter changes and could hold API-applied filters too.
 2. **Swap in the echo probe** above.
 3. **Display instance:** bind `CortexAnswerQuery[ANSWER_TEXT]` to **Answer
-   text** (context fields optional). **Input instance:** a second copy with
-   ONLY `PromptBinding[Prompt]` in **Prompt binding field** — its chip must
-   read **"input mode"** (if not, flip Format → Cortex Agent → Force input
-   mode).
+   text** and — for this round — leave **Context fields empty** (fact-table
+   columns and the `CortexAnswerQuery` island share one table query; keep that
+   variable out until the mechanism is proven). **Input instance:** a second
+   copy with ONLY `PromptBinding[Prompt]` in **Prompt binding field** — its
+   chip must read **"input mode"** (if not, flip Format → Cortex Agent →
+   Force input mode).
 4. Type a **unique** question in the input instance, Send. Expect within
    seconds: `ECHO: <question>` in the display instance. The input instance's
-   transcript shows the host ack + persisted-filter echoes (`ⓘ` lines) for two
-   minutes after each send.
+   transcript echoes what the host actually persisted (`ⓘ` lines) for two
+   minutes after each send — an empty `[]` there means the filter wasn't even
+   stored.
 5. If the echo works: restore the real `Sql`, ask a real question, allow
    minutes — that's the full pipeline.
-6. If the echo does NOT arrive: check Query History for the probe `SELECT`
-   (echo query fired but readback failed vs. parameter never moved), and grab
-   the input instance's `ⓘ`/`⚠` lines. If the parameter never moved on a clean
-   two-instance page, filters applied through the visual API likely don't
-   participate in Dynamic-M parameter resolution at all — the free-text design
-   is then dead, and the fallback is a **suggested-questions** flavor:
-   pre-populate `PromptBinding` with curated questions and let a native slicer
-   (single-select) drive the parameter — 100% documented mechanics — with the
-   display instance unchanged.
+6. If the echo does NOT arrive, discriminate in this order:
+   - **Query History**: probe `SELECT` present → the parameter moved and only
+     readback failed; absent → the parameter never moved.
+   - **Performance Analyzer** (View ribbon): refresh the display instance and
+     inspect its query — a `DEFINE MPARAMETER` carrying the typed question
+     means the filter reached the query and the problem is downstream.
+   - **Tie-breaker (~3 min): the Filter By List visual** (AppSource, DevScope —
+     not Microsoft's Text Filter, whose `Contains` is on the unsupported-ops
+     list). Drop it on the page, bind `PromptBinding[Prompt]` to it, paste the
+     question, Apply, watch Query History. If Filter By List moves the
+     parameter where ours didn't, the API path works in this report and our
+     visual's filter is defective — compare its persisted filter (funnel icon)
+     against our `ⓘ` echo. If it ALSO fails, no custom-visual filter drives
+     Dynamic M here, and the free-text design is dead: fall back to the
+     **suggested-questions** flavor — pre-populate `PromptBinding` with curated
+     questions and let a native single-select slicer drive the parameter
+     (100% documented mechanics), display instance unchanged.
 
 **Also since 1.0.5.0:** the prompt ends with a plain-text formatting
 instruction, because the agent returned a markdown table and the visual
@@ -407,8 +435,9 @@ Type the question in the **input** instance. The **display** instance's bubble
 fills in when the answer row arrives (it renders any new answer, whether or not
 it asked). Sending with an **empty box clears** that visual's persisted prompt
 filters — do that (or delete the visuals) when a test leaves an old question
-merged in. Any host rejection of a filter call appears as a muted
-`⚠ ... failed` line in the transcript; for two minutes after each send the
+merged in. A synchronous filter-validation error appears as a muted
+`⚠ ... failed` line in the transcript (`applyJsonFilter` returns `void`, so
+that's the only direct error channel); for two minutes after each send the
 transcript also echoes what the host actually persisted (`ⓘ` lines).
 
 ## How the pieces map
@@ -433,6 +462,14 @@ transcript also echoes what the host actually persisted (`ⓘ` lines).
   into the query **body** in M — that's fine. What must stay static is the
   `Snowflake.Databases(...)` source line: build any part of *it* from a parameter
   and scheduled refresh fails, but only in the Service (Desktop looks fine).
+- **Query reduction options** (File → Options → Query reduction): keep everything
+  off. "Apply" buttons defer slicer/filter changes and can hold the visual's
+  applied filter the same way.
+- **Context fields + Answer text share one table query.** `CortexAnswerQuery` is
+  its own disconnected island; binding fact-table columns alongside `ANSWER_TEXT`
+  can hit "can't determine relationships between the fields". If that bites once
+  context is re-enabled, the queued fix is a measure-friendly answer role (e.g.
+  `MAX(ANSWER_TEXT)`) — measures aggregate across unrelated islands.
 - **DirectQuery only**, **one question at a time**, **no streaming** (a spinner
   stands in), and **no memory** (each question is independent — there's no thread).
 - **Every distinct question is a billable agent run.** There's no answer cache (a
