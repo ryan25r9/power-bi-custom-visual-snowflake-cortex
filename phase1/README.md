@@ -70,8 +70,8 @@ These were all hit live against a real tenant. They shape the design below; don'
 
 ## Where debugging stands
 
-Last updated 2026-07-07, visual build **1.0.4.0** (adds host-side diagnostics)
-built but not yet tested.
+Last updated 2026-07-07, visual build **1.0.5.0** (adds the "Prompt binding
+field" well + input mode) built but not yet tested.
 
 **Symptom matrix (all verified live):**
 
@@ -79,44 +79,46 @@ built but not yet tested.
 |---|---|
 | Edit `PromptParameter` Current Value manually in Power Query, refresh | **Works.** Agent runs (~200s), real `ANSWER_TEXT` returns |
 | Filter pane: drag `PromptBinding[Prompt]` onto a plain table's "Filters on this visual", Advanced filtering, `is`, typed value | **Works.** `DATA_AGENT_RUN` appears in Snowflake Query History. Column is in no field well of that table |
-| Click Send in the custom visual, Basic `In` filter (builds ≤ 1.0.2.0) | **Fails.** No query ever appears in Query History — the parameter never moves. Fails even with a 5-character question and report context off |
-| Click Send in the custom visual, Advanced `Is` filter (build 1.0.3.0) | **Fails identically.** Still nothing in Query History — so the filter *shape* is not the difference |
+| Click Send in the custom visual (Basic `In` ≤ 1.0.2.0, Advanced `Is` 1.0.3.0/1.0.4.0) | **Fails.** No query ever appears in Query History — the parameter never moves. Filter shape makes no difference; fails even with a 5-character question and context off |
+| 1.0.4.0 diagnostics: `options.jsonFilters` echo after Send | **Filter IS persisted.** Host echoes it back attached to the visual — normalized to Basic `In` + `requireSingleSelection:false` even when we emitted Advanced `Is`. So the host parses, understands, canonicalizes, and stores the filter… and query generation still ignores it |
+| Send in the visual (arms the spinner), then hand-apply the same filter via the pane **on the chat visual itself** | **Full success.** Agent ran and the answer **rendered in the chat bubble** — parameter, M, Snowflake, dataView readback, and render-while-busy all proven |
 
-**Eliminated (don't re-tread):** the 180s timeout (real issue, fixed via the
-Answer-timeout setting, but irrelevant here — no query is ever issued); the
-"Require user approval for new native database queries" option (off); the
-Model-view Bind-to-parameter (verified set); table/column name mismatches; prompt
-payload size; the filter shape (Basic `In` vs Advanced `Is` behave the same from
-the API); the known `dataPoint`-vs-`general` packaged-visual pitfall (we already
-use `general`).
+**Conclusion so far:** the single broken link is `applyJsonFilter` →
+query generation. Filters applied by this visual are persisted but never enter
+any query — its own or other visuals' — while an identical filter created
+through the pane works fully.
 
-**Two live hypotheses.** H1: the host accepts but silently fails to persist the
-visual's filter. H2: the host persists it, but a filter applied by a visual that
-does NOT have the target column bound in a field well never propagates into any
-query — note every known working filter visual (Text Filter, Filter By List,
-sampleSlicer) binds the field it filters, and the filter-pane test can't refute
-this because pane filters take a different pipeline than visual-applied ones.
+**Eliminated (don't re-tread):** the 180s timeout (real, fixed via the
+Answer-timeout setting, but no query is ever issued); the "Require user approval
+for new native database queries" option (off); Model-view Bind-to-parameter
+(verified); name mismatches; prompt payload size; filter shape (Basic vs
+Advanced identical); the `dataPoint`-vs-`general` packaged-visual pitfall (we
+use `general`); H1 "host silently drops the filter" (refuted by the jsonFilters
+echo); the answer-readback path (proven working by the pane test).
 
-**Build 1.0.4.0 splits H1 vs H2:** on Send it prints `ⓘ <scope> filter
-acknowledged by host` when each applyJsonFilter promise resolves, and every
-update() while a question is in flight prints `ⓘ update type=…, host filter
-state: […]` — which echoes `options.jsonFilters`, i.e. what the host actually
-persisted. Filter echoed back but no Snowflake query → H2 (propagation). Empty
-`[]` echoed → H1 (silent drop).
+**Working hypothesis:** the host honors a visual's applied filter in query
+generation only when the visual *owns the target field* — every known working
+filter visual (slicers, Text Filter, Filter By List, sampleSlicer) has the
+filtered column bound in a well; ours didn't.
 
-**A no-build experiment that isolates the readback path:** click Send in the
-visual (starts the spinner), then immediately apply the pane filter (Advanced
-`is`, any question) **on the chat visual itself**. The pane filter is part of the
-chat visual's own query, so if the M parameter moves and the answer renders in
-the bubble, everything except `applyJsonFilter` is proven working end-to-end.
+**Build 1.0.5.0 tests that two ways.** It adds a **"Prompt binding field"** well
+and an input mode:
 
-**If H2 is confirmed, the planned pivot:** two-instance design mirroring the
-proven Filter-By-List pattern — an *input* instance with `PromptBinding[Prompt]`
-bound in a field well (filters propagate cross-visual from a visual that owns the
-field) and a *display* instance bound to `ANSWER_TEXT` that renders the
-transcript (it can read the question from `options.jsonFilters`). Single-visual
-selfFilter readback dies under H2 because binding the zero-row column into the
-visual's own projection would blank its query.
+1. **Cheap path (single visual).** On the existing chat instance, drag
+   `PromptBinding[Prompt]` into **Prompt binding field** (it is deliberately NOT
+   projected into the query, so it can't blank the dataView). Send a question →
+   check Query History. If this works, the single-visual design survives.
+2. **Two-instance fallback (proven pattern).** Add a *second* instance of the
+   visual with ONLY `PromptBinding[Prompt]` bound (it announces "input mode" in
+   its chip and derives the filter target from the bound field's queryName —
+   exactly what Text Filter does). Type the question there; the original display
+   instance (Answer text bound) renders the answer when it arrives — it now
+   renders any *new* answer even when it didn't ask the question itself.
+
+**Also in 1.0.5.0:** the prompt now ends with a plain-text formatting
+instruction, because the agent returned a markdown table and the visual
+deliberately renders plain text only (`textContent`, the XSS posture). Proper
+rich rendering stays a Phase 2 concern.
 
 ## Build it (in order)
 

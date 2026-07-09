@@ -47,6 +47,9 @@ export class Visual implements IVisual {
     private waitTimer?: number;
     private tickTimer?: number;
     private askedAt = 0;
+    private inputMode = false;     // true when only the promptField role is bound (input-only instance)
+    private lastAnswer = "";       // last rendered answer, so unrelated updates don't re-render it
+    private seenFirstData = false; // baseline the stale answer present at report open
 
     // DOM
     private root: HTMLElement;
@@ -70,7 +73,14 @@ export class Visual implements IVisual {
             this.settings = this.fmtService.populateFormattingSettingsModel(
                 VisualFormattingSettingsModel, options.dataViews?.[0]);
             this.dataView = options.dataViews?.[0];
-            this.refreshContextChip();
+            this.inputMode = !!this.dataView?.metadata?.columns?.some(c => !!c.roles?.["promptField"])
+                && !this.dataView?.metadata?.columns?.some(c => !!c.roles?.["answerText"]);
+            if (this.inputMode) {
+                this.contextChip.textContent = "input mode";
+                this.contextChip.title = "This instance only sends questions. Answers appear in the display instance (the one with Answer text bound).";
+            } else {
+                this.refreshContextChip();
+            }
 
             // DIAGNOSTIC (in-flight only): show what the host says our filter state is.
             // options.jsonFilters echoes the filters the host has actually persisted for
@@ -80,13 +90,21 @@ export class Visual implements IVisual {
                 this.addActivity(`ⓘ update type=${options.type}, host filter state: ${echoed.slice(0, 220)}${echoed.length > 220 ? "…" : ""}`);
             }
 
-            // The answer arrives as a fresh data update after our filter re-ran the
-            // query. Render it only on a data-bearing update while a question is in
-            // flight, so resize/format updates don't trip it.
+            // The answer arrives as a fresh data update after the filter re-ran the query.
+            // Render it whenever a NEW answer shows up — whether this instance asked the
+            // question (busy) or a separate input instance did. The first data update
+            // only baselines lastAnswer, so a stale answer isn't re-rendered at open.
             const isDataUpdate = (options.type & powerbi.VisualUpdateType.Data) !== 0;
-            if (this.busy && isDataUpdate) {
+            if (!this.inputMode && isDataUpdate) {
                 const answer = readAnswerText(this.dataView);
-                if (answer) this.finishTurn(answer);
+                if (!this.seenFirstData) {
+                    this.seenFirstData = true;
+                    if (!this.busy) this.lastAnswer = answer ?? "";
+                }
+                if (answer && answer !== this.lastAnswer) {
+                    this.lastAnswer = answer;
+                    this.finishTurn(answer);
+                }
             }
 
             events?.renderingFinished(options);
@@ -119,33 +137,31 @@ export class Visual implements IVisual {
         // Build the full prompt client-side, exactly like Phase 2 — but it now
         // travels through a Dynamic M parameter instead of an HTTP body.
         let prompt = question;
-        if (this.settings.agentCard.includeContext.value) {
+        if (!this.inputMode && this.settings.agentCard.includeContext.value) {
             const { block } = buildContextBlock(
                 this.dataView,
                 this.settings.agentCard.maxContextRows.value,
                 this.settings.agentCard.agentHint.value);
             prompt = `${block}\n\nUSER QUESTION: ${question}`;
         }
-
-        // Pending bubble pulses until the answer row returns in update().
-        this.pendingBubble = this.addBubble("assistant", "Asking the agent…");
-        this.pendingBubble.classList.add("cc-pending");
-        // Elapsed ticker: agent runs take minutes, so show progress or the visual
-        // looks frozen. Cleared in finishTurn().
-        this.askedAt = Date.now();
-        this.setStatus("Running in Snowflake — answers arrive all at once (no live typing).");
-        if (this.tickTimer) window.clearInterval(this.tickTimer);
-        this.tickTimer = window.setInterval(() => {
-            const secs = Math.round((Date.now() - this.askedAt) / 1000);
-            this.setStatus(`Running in Snowflake — ${secs}s elapsed. Agent runs can take a few minutes; the answer arrives all at once.`);
-        }, 5000);
+        // The visual renders plain text only (textContent — the XSS posture), so ask
+        // the agent not to send markdown it can't display.
+        prompt += "\n\nFormat the answer as plain sentences. Do not use markdown formatting or markdown tables.";
 
         // The round-trip: write the prompt as the selected value of the bound
         // column. The Dynamic M parameter picks it up and re-runs the answer query.
         // The value travels as data (a filter value into the M query), so we do
         // not escape it here — the M query handles quoting (see phase1/README.md).
-        const table = this.settings.agentCard.bindingTable.value?.trim() || "PromptBinding";
-        const column = this.settings.agentCard.bindingColumn.value?.trim() || "Prompt";
+        let table = this.settings.agentCard.bindingTable.value?.trim() || "PromptBinding";
+        let column = this.settings.agentCard.bindingColumn.value?.trim() || "Prompt";
+        // When the prompt column is actually bound to this instance (input mode), derive
+        // the target from the bound field itself — the pattern every working filter
+        // visual uses — rather than trusting typed names.
+        const boundPrompt = this.dataView?.categorical?.categories?.[0]?.source;
+        if (boundPrompt?.queryName?.includes(".")) {
+            table = boundPrompt.queryName.slice(0, boundPrompt.queryName.indexOf("."));
+            column = boundPrompt.displayName || column;
+        }
         // An ADVANCED "Is" filter — deliberately the exact shape proven to drive the
         // Dynamic M parameter when applied through the filter pane (a Basic "In" from
         // this API was observed NOT to reach Snowflake; see README field notes).
@@ -180,6 +196,28 @@ export class Visual implements IVisual {
                 surface(scope)(e);
             }
         }
+
+        // Input-only instance: it never receives the answer (that lands in the display
+        // instance's dataView), so acknowledge and reset instead of spinning.
+        if (this.inputMode) {
+            this.addActivity("Question sent — the answer appears in the chat display instance.");
+            this.busy = false;
+            this.sendBtn.disabled = false;
+            return;
+        }
+
+        // Display mode: pending bubble pulses until the answer row returns in update().
+        this.pendingBubble = this.addBubble("assistant", "Asking the agent…");
+        this.pendingBubble.classList.add("cc-pending");
+        // Elapsed ticker: agent runs take minutes, so show progress or the visual
+        // looks frozen. Cleared in finishTurn().
+        this.askedAt = Date.now();
+        this.setStatus("Running in Snowflake — answers arrive all at once (no live typing).");
+        if (this.tickTimer) window.clearInterval(this.tickTimer);
+        this.tickTimer = window.setInterval(() => {
+            const secs = Math.round((Date.now() - this.askedAt) / 1000);
+            this.setStatus(`Running in Snowflake — ${secs}s elapsed. Agent runs can take a few minutes; the answer arrives all at once.`);
+        }, 5000);
 
         // Safety net: if the query errors and no answer row ever lands, stop spinning.
         // Configurable (Format > Cortex Agent > Answer timeout) because agent runs

@@ -11,10 +11,30 @@
       "name": "answerText",
       "kind": "Grouping",
       "description": "Bind the ANSWER_TEXT column returned by the Cortex answer query. The agent's reply lands here as a row of data after you ask a question."
+    },
+    {
+      "displayName": "Prompt binding field",
+      "name": "promptField",
+      "kind": "Grouping",
+      "description": "Bind PromptBinding[Prompt] here. Filters applied by a visual appear to be honored only when the visual owns the target field — bind it here on the same visual, or on a second input-only instance."
     }
   ],
   "dataViewMappings": [
     {
+      "conditions": [
+        { "promptField": { "min": 1, "max": 1 }, "contextFields": { "max": 0 }, "answerText": { "max": 0 } }
+      ],
+      "categorical": {
+        "categories": {
+          "for": { "in": "promptField" },
+          "dataReductionAlgorithm": { "top": { "count": 1 } }
+        }
+      }
+    },
+    {
+      "conditions": [
+        { "promptField": { "max": 1 } }
+      ],
       "table": {
         "rows": {
           "select": [
