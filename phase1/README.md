@@ -191,20 +191,31 @@ the answer-readback path (proven working by the pane test).
 ### Fast iteration: the echo probe (no agent cost, answers in seconds)
 
 Waiting 3+ minutes and checking Query History per attempt made every round
-glacial. For filter debugging, temporarily replace the `Sql` step of
-`CortexAnswerQuery` with a probe that just echoes the parameter back:
+glacial. For filter debugging, temporarily replace `CortexAnswerQuery`'s
+**entire Advanced Editor contents** with a probe that just echoes the parameter
+back:
 
 ```m
+let
+  Source = Snowflake.Databases(
+             "msu-prod.east-us-2.privatelink.snowflakecomputing.com",
+             "POWERBI_WHS_2",
+             [Implementation = "2.0", Role = "SG_MSU_CORTEX_CHAT_PILOT"]),
+  Db    = Source{[Name = "DBS_ANALYTICS_AI"]}[Data],
+
   Sql   =
     if Text.Trim(PromptParameter) = "" or PromptParameter = "__no_prompt__" then
       "SELECT CAST(NULL AS STRING) AS ANSWER_TEXT, CAST(NULL AS STRING) AS GENERATED_SQL, 'IDLE' AS STATUS"
     else
-      "SELECT 'ECHO: " & Text.Replace(PromptParameter, "'", "''") & "' AS ANSWER_TEXT,
-              CAST(NULL AS STRING) AS GENERATED_SQL, 'ECHO' AS STATUS",
+      "SELECT 'ECHO: " & Text.Replace(PromptParameter, "'", "''") & "' AS ANSWER_TEXT, CAST(NULL AS STRING) AS GENERATED_SQL, 'ECHO' AS STATUS",
+
+  Result = Value.NativeQuery(Db, Sql, null, [EnableFolding = true])
+in
+  Result
 ```
 
-(Leave every other step, including `Body`, untouched — M is lazy, the unused
-`Body` costs nothing — and swap the real `Sql` back afterwards.) If the filter →
+To restore, paste back the full real definition from step 2 → Step 3 above
+(same query, agent call instead of the echo `SELECT`). If the filter →
 parameter link works, the display instance's bubble fills with `ECHO: <your
 question>` within seconds, and Query History shows the trivial `SELECT`. Every
 send is near-free, so you can iterate on the visual side rapidly and only run
@@ -231,7 +242,8 @@ the real agent once the echo works.
    transcript echoes what the host actually persisted (`ⓘ` lines) for two
    minutes after each send — an empty `[]` there means the filter wasn't even
    stored.
-5. If the echo works: restore the real `Sql`, ask a real question, allow
+5. If the echo works: restore the real query definition (Build it → step 2 →
+   Step 3), ask a real question, allow
    minutes — that's the full pipeline.
 6. If the echo does NOT arrive, discriminate in this order:
    - **Query History**: probe `SELECT` present → the parameter moved and only
