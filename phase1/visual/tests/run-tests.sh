@@ -7,4 +7,4 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # = phase1/visual
 
 "$ROOT/node_modules/.bin/tsc" -p "$ROOT/tests/tsconfig.json"
 
-node --test "$ROOT/tests/unit-context.mjs"
+node --test "$ROOT/tests/unit-context.mjs" "$ROOT/tests/unit-capabilities.mjs"

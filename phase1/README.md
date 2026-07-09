@@ -19,18 +19,19 @@ The visual never talks to Snowflake. Instead it round-trips through Power BI's o
 query engine:
 
 ```
-1. You type a question.
-   The visual builds the prompt (question + the filtered context fields) and
-   pushes it as a filter value onto a hidden "binding" column.
+1. You type a question into the INPUT instance of the visual.
+   It builds the prompt and applies it as a filter value onto a hidden
+   "binding" column. (A visual's filter only ever reaches OTHER visuals —
+   slicer semantics — which is why sending and displaying are two instances.)
         │
         ▼
-2. A Dynamic M parameter is bound to that column, so the new value re-runs a
-   DirectQuery whose native SQL runs the Cortex agent inline
+2. A Dynamic M parameter is bound to that column, so the new value re-runs the
+   DISPLAY instance's DirectQuery, whose native SQL runs the Cortex agent inline
    (SNOWFLAKE.CORTEX.DATA_AGENT_RUN) and returns the answer as a ROW OF DATA.
         │
         ▼
-3. That answer row lands back in the visual's dataView (the "Answer text" role).
-   The same visual reads it on its next update() and shows it in a bubble.
+3. That answer row lands in the display instance's dataView (the "Answer text"
+   role); it renders the new answer in a bubble on its next update().
 ```
 
 So the answer comes back as **data**, not an API response. That is the whole trick,
@@ -51,27 +52,39 @@ These were all hit live against a real tenant. They shape the design below; don'
   `Value.NativeQuery`. Concatenate the prompt into the query **body** in M instead
   (never into the source line — see Gotchas).
 - **A visual's applied filter doesn't filter the visual itself.** `applyJsonFilter`
-  has slicer semantics: it filters every *other* visual on the page. The answer has
-  to arrive in the chat visual's *own* dataView, so the visual also applies the
-  prompt filter at the **`selfFilter`** scope (declared in `capabilities.json`).
+  has slicer semantics: it filters every *other* visual on the page, never the
+  applier's own query. The `selfFilter` scope does NOT rescue this — three live
+  tests applied it (host acknowledged each time) and the parameter never moved.
+  Hence the two-instance design: an input-only instance sends, a display instance
+  (Answer text bound) receives. 1.0.6.0 stopped applying `selfFilter` and actively
+  clears stale ones left by earlier builds.
 - **Agent runs take minutes, not seconds** — 200s observed for a single question.
   The visual's give-up point is the Format-pane **Answer timeout** setting
   (default 600s); a too-short timeout looks exactly like a broken pipeline.
 - **`applyJsonFilter` failures are silent.** The returned promise's rejection was
   being dropped; the visual now surfaces any rejection as a muted `⚠ ... filter
   failed` line in the transcript.
-- **A visual-applied Basic `In` filter never reached Snowflake** (no query in Query
-  History at all), while the **filter pane's Advanced `is` filter on the same
-  column works** — and works even though the column is in no field well of the
-  filtered visual. The current build therefore emits the Advanced/`Is` shape.
-  Unverified as of the last test round — see debugging status.
+- **Filter shape doesn't matter; where the filter comes from does.** A visual-applied
+  filter (Basic `In` or Advanced `Is` — the host persists both normalized to Basic
+  `In`) never fired the applying visual's own query, while a filter-pane Advanced
+  `is` card on the same visual works fully — pane cards apply to the visual's own
+  query, visual-applied filters don't (previous bullet). The build still emits
+  Advanced/`Is`, the pane-proven shape, for the outbound filter.
+- **Stale filters are silent test-killers.** `applyJsonFilter(..., merge)` persists
+  into the .pbix and nothing ever removed it, so an old question can linger on a
+  visual (at either scope) and conflict with the new value — the parameter then can't
+  resolve to a single value and nothing fires. Same for leftover pane cards like
+  `Prompt is (All)`, and for repeating the same question text (the DirectQuery cache
+  serves it — no new Snowflake query, which reads as a false negative). Test protocol:
+  fresh visuals, unique question text every run.
 - Verify the round-trip **in the Power BI Service**, not just Desktop — the
   dynamic-data-source refresh restriction only bites in the Service.
 
 ## Where debugging stands
 
-Last updated 2026-07-07, visual build **1.0.5.0** (adds the "Prompt binding
-field" well + input mode) built but not yet tested.
+Last updated 2026-07-09, visual build **1.0.6.0** (fixes the defect that
+invalidated the 1.0.5.0 two-instance test; drops `selfFilter`; adds a
+force-input-mode backstop and a filter-clear action). Built, not yet live-tested.
 
 **Symptom matrix (all verified live):**
 
@@ -79,43 +92,107 @@ field" well + input mode) built but not yet tested.
 |---|---|
 | Edit `PromptParameter` Current Value manually in Power Query, refresh | **Works.** Agent runs (~200s), real `ANSWER_TEXT` returns |
 | Filter pane: drag `PromptBinding[Prompt]` onto a plain table's "Filters on this visual", Advanced filtering, `is`, typed value | **Works.** `DATA_AGENT_RUN` appears in Snowflake Query History. Column is in no field well of that table |
-| Click Send in the custom visual (Basic `In` ≤ 1.0.2.0, Advanced `Is` 1.0.3.0/1.0.4.0) | **Fails.** No query ever appears in Query History — the parameter never moves. Filter shape makes no difference; fails even with a 5-character question and context off |
-| 1.0.4.0 diagnostics: `options.jsonFilters` echo after Send | **Filter IS persisted.** Host echoes it back attached to the visual — normalized to Basic `In` + `requireSingleSelection:false` even when we emitted Advanced `Is`. So the host parses, understands, canonicalizes, and stores the filter… and query generation still ignores it |
+| Click Send in the custom visual (Basic `In` ≤ 1.0.2.0, Advanced `Is` 1.0.3.0+) | **Fails.** No query ever appears in Query History — the parameter never moves. Filter shape makes no difference; fails even with a 5-character question and context off |
+| 1.0.4.0 diagnostics: `options.jsonFilters` echo after Send | **Filter IS persisted.** Host echoes it back attached to the visual — normalized to Basic `In` + `requireSingleSelection:false` even when we emitted Advanced `Is`. So the host parses, canonicalizes, and stores the filter… and the applying visual's query never re-runs |
 | Send in the visual (arms the spinner), then hand-apply the same filter via the pane **on the chat visual itself** | **Full success.** Agent ran and the answer **rendered in the chat bubble** — parameter, M, Snowflake, dataView readback, and render-while-busy all proven |
+| 1.0.5.0 "Test A": `PromptBinding[Prompt]` in the new well **on the same visual** (Answer text still bound), Send | **Fails identically.** Filter persisted (echo again Basic `In`), no query, 600s timeout. Having the field in a well doesn't make the visual's own query honor its own filter |
+| 1.0.5.0 "Test B": second instance with only Prompt bound | **Invalid — never ran.** The instance stayed in display mode ("no context fields bound" chip, not "input mode"), and removing Answer text popped Desktop's "an error occurred while rendering the report". Root cause found in OUR capabilities.json — see below |
 
-**Conclusion so far:** the single broken link is `applyJsonFilter` →
-query generation. Filters applied by this visual are persisted but never enter
-any query — its own or other visuals' — while an identical filter created
-through the pane works fully.
+**Root cause of the Test B failure (fixed in 1.0.6.0):** the two
+`dataViewMappings` condition sets **overlapped** — with only the prompt field
+bound, the categorical mapping matched *and* the table mapping's condition
+(`promptField ≤ 1`) matched too. The host's behavior under ambiguous conditions
+produced the rendering error and a table-shaped dataView with no prompt column,
+so input-mode detection failed. 1.0.6.0 makes the three condition sets mutually
+exclusive (input / combo / display) and pins that with a unit test
+(`tests/unit-capabilities.mjs`). Detection is also hardened: it scans **all**
+dataViews for the role, falls back on the mapping *shape* (only the prompt role
+maps to categorical, so a categorical dataView with empty metadata — the
+zero-row-table edge — still detects), and there's a manual **Format → Cortex
+Agent → Force input mode** toggle as the last-resort backstop.
+
+**Working theory (upgraded, consistent with every observation):**
+`applyJsonFilter` at the `general/filter` scope has **slicer semantics — the
+filter applies to every other visual on the page and never to the applier's own
+query.** Pane filter cards DO apply to the visual's own query, which is why the
+hand-applied card worked end to end. `selfFilter` doesn't rescue the
+single-visual design (acknowledged by the host three times, parameter never
+moved — it appears to be a search-style reduction, not a query-context filter).
+Consequences:
+
+- A **single-visual** chat can never fire its own DirectQuery. Test A could not
+  have succeeded regardless of wells.
+- The **two-instance** design is the load-bearing test, and it has still never
+  validly run: the improvised 1.0.5.0 attempt ran with the copy stuck in display
+  mode, a rendering error on the page, and (likely) **stale conflicting filters**
+  — builds ≤ 1.0.5.0 merged filters at both scopes and never removed them, so old
+  questions persisted on both instances; two different values on the same column
+  make the parameter unresolvable. 1.0.6.0 applies the outbound scope only,
+  clears the `selfFilter` scope on every send, and Send-with-an-empty-box now
+  removes this visual's prompt filters entirely (a reset that doesn't require
+  deleting the visual).
 
 **Eliminated (don't re-tread):** the 180s timeout (real, fixed via the
 Answer-timeout setting, but no query is ever issued); the "Require user approval
 for new native database queries" option (off); Model-view Bind-to-parameter
 (verified); name mismatches; prompt payload size; filter shape (Basic vs
-Advanced identical); the `dataPoint`-vs-`general` packaged-visual pitfall (we
-use `general`); H1 "host silently drops the filter" (refuted by the jsonFilters
-echo); the answer-readback path (proven working by the pane test).
+Advanced identical, host normalizes to Basic `In` anyway); the
+`dataPoint`-vs-`general` packaged-visual pitfall (we use `general`); H1 "host
+silently drops the filter" (refuted by the jsonFilters echo); "the visual must
+own the target field in a well" as a *single-visual* fix (refuted by Test A);
+the answer-readback path (proven working by the pane test).
 
-**Working hypothesis:** the host honors a visual's applied filter in query
-generation only when the visual *owns the target field* — every known working
-filter visual (slicers, Text Filter, Filter By List, sampleSlicer) has the
-filtered column bound in a well; ours didn't.
+### Fast iteration: the echo probe (no agent cost, answers in seconds)
 
-**Build 1.0.5.0 tests that two ways.** It adds a **"Prompt binding field"** well
-and an input mode:
+Waiting 3+ minutes and checking Query History per attempt made every round
+glacial. For filter debugging, temporarily replace the `Sql` step of
+`CortexAnswerQuery` with a probe that just echoes the parameter back:
 
-1. **Cheap path (single visual).** On the existing chat instance, drag
-   `PromptBinding[Prompt]` into **Prompt binding field** (it is deliberately NOT
-   projected into the query, so it can't blank the dataView). Send a question →
-   check Query History. If this works, the single-visual design survives.
-2. **Two-instance fallback (proven pattern).** Add a *second* instance of the
-   visual with ONLY `PromptBinding[Prompt]` bound (it announces "input mode" in
-   its chip and derives the filter target from the bound field's queryName —
-   exactly what Text Filter does). Type the question there; the original display
-   instance (Answer text bound) renders the answer when it arrives — it now
-   renders any *new* answer even when it didn't ask the question itself.
+```m
+  Sql   =
+    if Text.Trim(PromptParameter) = "" or PromptParameter = "__no_prompt__" then
+      "SELECT CAST(NULL AS STRING) AS ANSWER_TEXT, CAST(NULL AS STRING) AS GENERATED_SQL, 'IDLE' AS STATUS"
+    else
+      "SELECT 'ECHO: " & Text.Replace(PromptParameter, "'", "''") & "' AS ANSWER_TEXT,
+              CAST(NULL AS STRING) AS GENERATED_SQL, 'ECHO' AS STATUS",
+```
 
-**Also in 1.0.5.0:** the prompt now ends with a plain-text formatting
+(Leave every other step, including `Body`, untouched — M is lazy, the unused
+`Body` costs nothing — and swap the real `Sql` back afterwards.) If the filter →
+parameter link works, the display instance's bubble fills with `ECHO: <your
+question>` within seconds, and Query History shows the trivial `SELECT`. Every
+send is near-free, so you can iterate on the visual side rapidly and only run
+the real agent once the echo works.
+
+### The 1.0.6.0 test (two instances, clean slate)
+
+1. **Clean slate.** Delete ALL old chat-visual instances from the page (this
+   purges their stale persisted filters), remove any `Prompt` cards from the
+   filter pane (including an inert-looking `is (All)`), then import
+   `dist/...1.0.6.0.pbiviz`.
+2. **Swap in the echo probe** above.
+3. **Display instance:** bind `CortexAnswerQuery[ANSWER_TEXT]` to **Answer
+   text** (context fields optional). **Input instance:** a second copy with
+   ONLY `PromptBinding[Prompt]` in **Prompt binding field** — its chip must
+   read **"input mode"** (if not, flip Format → Cortex Agent → Force input
+   mode).
+4. Type a **unique** question in the input instance, Send. Expect within
+   seconds: `ECHO: <question>` in the display instance. The input instance's
+   transcript shows the host ack + persisted-filter echoes (`ⓘ` lines) for two
+   minutes after each send.
+5. If the echo works: restore the real `Sql`, ask a real question, allow
+   minutes — that's the full pipeline.
+6. If the echo does NOT arrive: check Query History for the probe `SELECT`
+   (echo query fired but readback failed vs. parameter never moved), and grab
+   the input instance's `ⓘ`/`⚠` lines. If the parameter never moved on a clean
+   two-instance page, filters applied through the visual API likely don't
+   participate in Dynamic-M parameter resolution at all — the free-text design
+   is then dead, and the fallback is a **suggested-questions** flavor:
+   pre-populate `PromptBinding` with curated questions and let a native slicer
+   (single-select) drive the parameter — 100% documented mechanics — with the
+   display instance unchanged.
+
+**Also since 1.0.5.0:** the prompt ends with a plain-text formatting
 instruction, because the agent returned a markdown table and the visual
 deliberately renders plain text only (`textContent`, the XSS posture). Proper
 rich rendering stays a Phase 2 concern.
@@ -278,22 +355,30 @@ npm install
 npx pbiviz package        # builds dist/*.pbiviz
 ```
 
-Import the `.pbiviz`, add it to the page, then:
+Import the `.pbiviz`, then add **two instances** to the page — a visual-applied
+filter never applies to the applier's own query (slicer semantics), so the
+sender and the receiver must be separate:
 
-- Bind your filter dimensions/measures (Region, Year, Category, …) to **Context fields**.
-- Bind `CortexAnswerQuery[ANSWER_TEXT]` to **Answer text**.
-- In **Format → Cortex Agent**, set **Prompt binding table** / **Prompt binding column**
-  to match the names you used (defaults are `PromptBinding` / `Prompt`), and size
-  **Answer timeout (seconds)** above your slowest observed agent run (default 600).
+- **Display instance** — bind `CortexAnswerQuery[ANSWER_TEXT]` to **Answer
+  text**; optionally bind your filter dimensions/measures (Region, Year, …) to
+  **Context fields**. Leave **Prompt binding field** empty.
+- **Input instance** — a second copy with ONLY `PromptBinding[Prompt]` in
+  **Prompt binding field** (nothing else bound anywhere). Its chip reads
+  **"input mode"**; if detection ever fails (zero-row-table edge), flip
+  **Format → Cortex Agent → Force input mode** on.
+- On the display instance, in **Format → Cortex Agent**, size **Answer timeout
+  (seconds)** above your slowest observed agent run (default 600). The
+  **Prompt binding table/column** names only matter for a display instance
+  sending without a bound prompt column (the input instance derives the target
+  from the bound field itself).
 
-Ask a question. The bubble pulses and the status line ticks elapsed seconds while
-Snowflake runs, then the bubble fills in with the answer.
-
-Under the hood the visual applies the prompt filter at **two scopes**: `selfFilter`
-(so its *own* answer query re-runs — applied filters otherwise skip the applying
-visual) and the normal page-scope filter (which reaches other visuals, e.g. a debug
-table). Both are declared in `capabilities.json`. Any host rejection of those filter
-calls appears as a muted `⚠ ... filter failed` line in the transcript.
+Type the question in the **input** instance. The **display** instance's bubble
+fills in when the answer row arrives (it renders any new answer, whether or not
+it asked). Sending with an **empty box clears** that visual's persisted prompt
+filters — do that (or delete the visuals) when a test leaves an old question
+merged in. Any host rejection of a filter call appears as a muted
+`⚠ ... failed` line in the transcript; for two minutes after each send the
+transcript also echoes what the host actually persisted (`ⓘ` lines).
 
 ## How the pieces map
 

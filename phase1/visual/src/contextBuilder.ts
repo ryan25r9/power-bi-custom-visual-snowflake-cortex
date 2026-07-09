@@ -76,6 +76,39 @@ export function buildContextBlock(
     return { block: lines.join("\n"), summary };
 }
 
+/**
+ * Input mode = this instance only SENDS questions (the prompt column is bound,
+ * no answer column). Detection must survive the zero-row binding table: the
+ * categorical dataView for an empty Import column may arrive with no metadata
+ * columns at all, so fall back on the mapping *shape* (only the promptField role
+ * maps to categorical — see capabilities.json), and let the report author force
+ * the mode from the format pane as a last resort.
+ */
+export function detectInputMode(dataViews: DataView[] | undefined, forced: boolean): boolean {
+    if (forced) return true;
+    const dvs = dataViews ?? [];
+    const hasRole = (role: string) =>
+        dvs.some(dv => !!dv?.metadata?.columns?.some(c => !!c.roles?.[role]));
+    if (hasRole("answerText")) return false;   // display/combo instance, never input
+    if (hasRole("promptField")) return true;
+    return dvs.some(dv => !!dv?.categorical) && !dvs.some(dv => !!dv?.table);
+}
+
+/**
+ * The bound prompt column, from whichever dataView carries it — the filter
+ * target is derived from its queryName (the lineage every working filter visual
+ * uses) instead of names typed into the format pane.
+ */
+export function findPromptSource(dataViews: DataView[] | undefined): powerbi.DataViewMetadataColumn | undefined {
+    for (const dv of dataViews ?? []) {
+        const cat = dv?.categorical?.categories?.find(c => !!c.source?.roles?.["promptField"]);
+        if (cat?.source) return cat.source;
+        const col = dv?.metadata?.columns?.find(c => !!c.roles?.["promptField"]);
+        if (col) return col;
+    }
+    return undefined;
+}
+
 /** First non-empty value in the column bound to the "Answer text" role, or null. */
 export function readAnswerText(dataView: DataView | undefined): string | null {
     const table = dataView?.table;

@@ -16,7 +16,7 @@
       "displayName": "Prompt binding field",
       "name": "promptField",
       "kind": "Grouping",
-      "description": "Bind PromptBinding[Prompt] here. Filters applied by a visual appear to be honored only when the visual owns the target field — bind it here on the same visual, or on a second input-only instance."
+      "description": "Bind PromptBinding[Prompt] here on a second, input-only instance (nothing else bound). A visual's applied filter has slicer semantics — it filters every OTHER visual, never its own query — so the instance that sends the question must be separate from the one that displays the answer."
     }
   ],
   "dataViewMappings": [
@@ -33,7 +33,21 @@
     },
     {
       "conditions": [
-        { "promptField": { "max": 1 } }
+        { "promptField": { "min": 1, "max": 1 }, "answerText": { "min": 1 } }
+      ],
+      "table": {
+        "rows": {
+          "select": [
+            { "for": { "in": "contextFields" } },
+            { "for": { "in": "answerText" } }
+          ],
+          "dataReductionAlgorithm": { "top": { "count": 1000 } }
+        }
+      }
+    },
+    {
+      "conditions": [
+        { "promptField": { "max": 0 } }
       ],
       "table": {
         "rows": {
@@ -54,7 +68,8 @@
         "includeContext": { "type": { "bool": true } },
         "maxContextRows": { "type": { "numeric": true } },
         "agentHint": { "type": { "text": true } },
-        "answerTimeoutSecs": { "type": { "numeric": true } }
+        "answerTimeoutSecs": { "type": { "numeric": true } },
+        "forceInputMode": { "type": { "bool": true } }
       }
     },
     "general": {

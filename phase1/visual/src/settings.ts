@@ -60,7 +60,18 @@ class AgentCard extends formattingSettings.SimpleCard {
         value: 600
     });
 
-    slices = [this.bindingTable, this.bindingColumn, this.includeContext, this.maxContextRows, this.agentHint, this.answerTimeout];
+    // Backstop for input-mode auto-detection: the binding column is a zero-row
+    // table, and an empty column can arrive with no metadata for the visual to
+    // detect the role from. Flip this on the input-only instance if its chip
+    // doesn't say "input mode".
+    forceInputMode = new formattingSettings.ToggleSwitch({
+        name: "forceInputMode",
+        displayName: "Force input mode",
+        description: "Treat this instance as the question-input box even if automatic detection fails.",
+        value: false
+    });
+
+    slices = [this.bindingTable, this.bindingColumn, this.includeContext, this.maxContextRows, this.agentHint, this.answerTimeout, this.forceInputMode];
 }
 
 export class VisualFormattingSettingsModel extends formattingSettings.Model {

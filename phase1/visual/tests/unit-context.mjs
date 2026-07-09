@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildContextBlock, readAnswerText } from "./build/contextBuilder.js";
+import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource } from "./build/contextBuilder.js";
 
 /** Fake DataView. cols: [{displayName, isMeasure?, answer?}]; answer:true tags the answerText role. */
 function makeDataView(cols, rows) {
@@ -82,4 +82,55 @@ test("6. no context fields bound -> explanatory line, fieldCount 0", () => {
     assert.equal(summary.fieldCount, 0);
     assert.ok(/no context fields are bound/i.test(block));
     assert.ok(!block.includes("just an answer"), "answer still excluded even when it's the only column");
+});
+
+// ---------- input-mode detection (two-instance design) ----------
+
+const promptCol = { displayName: "Prompt", queryName: "PromptBinding.Prompt", roles: { promptField: true } };
+
+/** Categorical dataView as the host delivers it for the input-only instance. */
+function inputDv({ withMetadata = true, withCategories = true } = {}) {
+    return {
+        metadata: { columns: withMetadata ? [promptCol] : [] },
+        categorical: withCategories ? { categories: [{ source: promptCol, values: [] }] } : {}
+    };
+}
+
+/** Table dataView for a display instance (answer + optional context bound). */
+function displayDv() {
+    return {
+        metadata: { columns: [{ displayName: "Reply", roles: { answerText: true } }] },
+        table: { columns: [{ displayName: "Reply", roles: { answerText: true } }], rows: [] }
+    };
+}
+
+test("7. detectInputMode: prompt column bound alone -> input mode", () => {
+    assert.equal(detectInputMode([inputDv()], false), true);
+});
+
+test("8. detectInputMode: zero-row edge — categorical shape with EMPTY metadata still detects", () => {
+    // The binding table has no rows; the host may deliver the categorical dataView
+    // with no metadata columns at all. Shape (categorical, no table) must suffice.
+    assert.equal(detectInputMode([inputDv({ withMetadata: false, withCategories: false })], false), true);
+});
+
+test("9. detectInputMode: answer text bound -> display mode, even if prompt is also bound", () => {
+    assert.equal(detectInputMode([displayDv()], false), false);
+    const combo = displayDv();
+    combo.metadata.columns.push(promptCol);
+    assert.equal(detectInputMode([combo], false), false, "combo (Test-A shape) instances stay display");
+});
+
+test("10. detectInputMode: nothing bound -> display mode; forced flag overrides everything", () => {
+    assert.equal(detectInputMode([], false), false);
+    assert.equal(detectInputMode(undefined, false), false);
+    assert.equal(detectInputMode(undefined, true), true, "format-pane Force input mode is the backstop");
+});
+
+test("11. findPromptSource: prefers the categorical source, falls back to metadata, else undefined", () => {
+    assert.equal(findPromptSource([inputDv()])?.queryName, "PromptBinding.Prompt");
+    const metaOnly = { metadata: { columns: [promptCol] } };
+    assert.equal(findPromptSource([displayDv(), metaOnly])?.queryName, "PromptBinding.Prompt",
+        "scans past dataViews that lack the role");
+    assert.equal(findPromptSource([displayDv()]), undefined);
 });

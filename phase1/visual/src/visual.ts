@@ -5,15 +5,17 @@
  * a round-trip through the Power BI model/query layer:
  *
  *   1. On send, it builds the prompt (question + filtered report context) and
- *      pushes it as a Basic filter onto a hidden "binding" column that a Dynamic
- *      M Query Parameter is bound to (setup in phase1/README.md). The filter is
- *      applied at BOTH scopes — selfFilter (so our own query sees it) and the
- *      page-scope filter (visible in the Filters pane).
+ *      applies it as a filter onto a "binding" column that a Dynamic M Query
+ *      Parameter is bound to (setup in phase1/README.md). A visual-applied
+ *      filter has slicer semantics — it filters every OTHER visual, never the
+ *      applier's own query — so the design is TWO instances: an input-only one
+ *      (just the prompt column bound) that sends, and a display one (Answer
+ *      text bound) whose query the filter re-runs.
  *   2. That parameter change re-runs the DirectQuery answer query, whose native
  *      SQL runs the Cortex agent (SNOWFLAKE.CORTEX.DATA_AGENT_RUN) inline and
  *      returns the answer as a row of data. No Snowflake objects are created.
- *   3. On the next update(), the answer arrives in dataView under the "Answer
- *      text" role; the visual reads it and replaces the pending bubble.
+ *   3. The display instance's next update() carries the answer under the
+ *      "Answer text" role; it renders any NEW answer, busy or not.
  *
  * No Azure Function, no CORS, no streaming, no conversation memory — one
  * question, one round-trip, one answer.
@@ -30,7 +32,7 @@ import DataView = powerbi.DataView;
 
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import { VisualFormattingSettingsModel } from "./settings";
-import { buildContextBlock, readAnswerText } from "./contextBuilder";
+import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource } from "./contextBuilder";
 
 // Fallback if the format-pane "Answer timeout (seconds)" setting is unset.
 // Agent runs routinely take minutes (200s+ observed live), so stay generous.
@@ -42,11 +44,13 @@ export class Visual implements IVisual {
     private fmtService: FormattingSettingsService;
 
     private dataView?: DataView;
+    private dataViews: DataView[] = [];
     private busy = false;
     private pendingBubble?: HTMLElement;
     private waitTimer?: number;
     private tickTimer?: number;
     private askedAt = 0;
+    private lastSendAt = 0;        // diagnostics window — echo host filter state after any send
     private inputMode = false;     // true when only the promptField role is bound (input-only instance)
     private lastAnswer = "";       // last rendered answer, so unrelated updates don't re-render it
     private seenFirstData = false; // baseline the stale answer present at report open
@@ -72,9 +76,10 @@ export class Visual implements IVisual {
         try {
             this.settings = this.fmtService.populateFormattingSettingsModel(
                 VisualFormattingSettingsModel, options.dataViews?.[0]);
-            this.dataView = options.dataViews?.[0];
-            this.inputMode = !!this.dataView?.metadata?.columns?.some(c => !!c.roles?.["promptField"])
-                && !this.dataView?.metadata?.columns?.some(c => !!c.roles?.["answerText"]);
+            this.dataViews = options.dataViews ?? [];
+            this.dataView = this.dataViews[0];
+            this.inputMode = detectInputMode(this.dataViews,
+                this.settings.agentCard.forceInputMode.value);
             if (this.inputMode) {
                 this.contextChip.textContent = "input mode";
                 this.contextChip.title = "This instance only sends questions. Answers appear in the display instance (the one with Answer text bound).";
@@ -82,10 +87,11 @@ export class Visual implements IVisual {
                 this.refreshContextChip();
             }
 
-            // DIAGNOSTIC (in-flight only): show what the host says our filter state is.
-            // options.jsonFilters echoes the filters the host has actually persisted for
-            // this visual — the decisive signal for whether applyJsonFilter took effect.
-            if (this.busy) {
+            // DIAGNOSTIC: show what the host says our filter state is. options.jsonFilters
+            // echoes the filters the host has actually persisted for this visual — the
+            // decisive signal for whether applyJsonFilter took effect. Window it to two
+            // minutes after a send so the input instance (which is never "busy") echoes too.
+            if (this.busy || (this.lastSendAt && Date.now() - this.lastSendAt < 120_000)) {
                 const echoed = JSON.stringify(options.jsonFilters ?? []);
                 this.addActivity(`ⓘ update type=${options.type}, host filter state: ${echoed.slice(0, 220)}${echoed.length > 220 ? "…" : ""}`);
             }
@@ -126,9 +132,14 @@ export class Visual implements IVisual {
     // ---------- ask / answer ----------
 
     private send(): void {
+        if (this.busy) return;
         const question = this.inputEl.value.trim();
-        if (!question || this.busy) return;
+        // Empty Send = reset: remove this visual's persisted prompt filters. Stale
+        // filters (an old question still merged in) otherwise linger in the .pbix
+        // and can make the parameter unresolvable when a new value arrives.
+        if (!question) { this.clearPromptFilters(); return; }
 
+        this.lastSendAt = Date.now();
         this.busy = true;
         this.sendBtn.disabled = true;
         this.inputEl.value = "";
@@ -152,50 +163,15 @@ export class Visual implements IVisual {
         // column. The Dynamic M parameter picks it up and re-runs the answer query.
         // The value travels as data (a filter value into the M query), so we do
         // not escape it here — the M query handles quoting (see phase1/README.md).
-        let table = this.settings.agentCard.bindingTable.value?.trim() || "PromptBinding";
-        let column = this.settings.agentCard.bindingColumn.value?.trim() || "Prompt";
-        // When the prompt column is actually bound to this instance (input mode), derive
-        // the target from the bound field itself — the pattern every working filter
-        // visual uses — rather than trusting typed names.
-        const boundPrompt = this.dataView?.categorical?.categories?.[0]?.source;
-        if (boundPrompt?.queryName?.includes(".")) {
-            table = boundPrompt.queryName.slice(0, boundPrompt.queryName.indexOf("."));
-            column = boundPrompt.displayName || column;
-        }
-        // An ADVANCED "Is" filter — deliberately the exact shape proven to drive the
-        // Dynamic M parameter when applied through the filter pane (a Basic "In" from
-        // this API was observed NOT to reach Snowflake; see README field notes).
-        const filter = {
-            // eslint-disable-next-line powerbi-visuals/no-http-string -- canonical Power BI filter schema id, not a fetched URL
-            $schema: "http://powerbi.com/product/schema#advanced",
-            target: { table, column },
-            filterType: 0,            // FilterType.Advanced
-            logicalOperator: "And",
-            conditions: [{ operator: "Is", value: prompt }]
-        };
-        // Apply at two scopes, and SURFACE any host rejection in the transcript —
-        // applyJsonFilter failures are otherwise silent, which made this bug invisible.
-        //   selfFilter -> our own query re-runs with the new parameter value
-        //   filter     -> page scope (other visuals, e.g. a debug table)
-        const surface = (scope: string) => (e: unknown) => {
-            const msg = (e as { message?: string })?.message ?? String(e);
-            this.addActivity(`⚠ ${scope} filter failed: ${msg}`);
-        };
-        for (const scope of ["selfFilter", "filter"] as const) {
-            try {
-                const r = this.host.applyJsonFilter(
-                    filter as powerbi.IFilter, "general", scope, powerbi.FilterAction.merge) as unknown as {
-                        then?: (f: () => void) => { catch?: (f: (e: unknown) => void) => void };
-                        catch?: (f: (e: unknown) => void) => void;
-                    };
-                // DIAGNOSTIC: positive ack too, so "accepted but ignored" is distinguishable
-                // from "never processed".
-                const chained = r?.then?.(() => this.addActivity(`ⓘ ${scope} filter acknowledged by host`));
-                (chained ?? r)?.catch?.(surface(scope));
-            } catch (e) {
-                surface(scope)(e);
-            }
-        }
+        const { table, column } = this.promptTarget();
+        const filter = this.buildPromptFilter(table, column, prompt);
+        // Outbound scope ONLY. A visual's applied filter never enters its own query
+        // (slicer semantics — three live tests), so selfFilter buys nothing; worse,
+        // builds ≤1.0.5.0 left stale selfFilters (an old question) persisted on this
+        // visual, poisoning its own filter context with a conflicting value. Clear
+        // that scope on every send, then merge the new outbound filter.
+        this.applyFilter(filter, "selfFilter", powerbi.FilterAction.remove, true);
+        this.applyFilter(filter, "filter", powerbi.FilterAction.merge);
 
         // Input-only instance: it never receives the answer (that lands in the display
         // instance's dataView), so acknowledge and reset instead of spinning.
@@ -245,6 +221,75 @@ export class Visual implements IVisual {
         this.sendBtn.disabled = false;
         this.setStatus("");
         this.scrollDown();
+    }
+
+    // ---------- filter plumbing ----------
+
+    /**
+     * Filter target for the prompt column: derived from the bound field's queryName
+     * when the column is bound (the lineage every working filter visual uses), else
+     * the names typed in the format pane.
+     */
+    private promptTarget(): { table: string; column: string } {
+        let table = this.settings?.agentCard.bindingTable.value?.trim() || "PromptBinding";
+        let column = this.settings?.agentCard.bindingColumn.value?.trim() || "Prompt";
+        const bound = findPromptSource(this.dataViews);
+        if (bound?.queryName?.includes(".")) {
+            table = bound.queryName.slice(0, bound.queryName.indexOf("."));
+            column = bound.displayName || column;
+        }
+        return { table, column };
+    }
+
+    /**
+     * ADVANCED "Is" — the exact shape proven to drive the Dynamic M parameter when
+     * created through the filter pane. (The host persists it normalized to Basic
+     * "In"; emitting Basic directly made no difference in live tests.)
+     */
+    private buildPromptFilter(table: string, column: string, value: string): powerbi.IFilter {
+        return {
+            // eslint-disable-next-line powerbi-visuals/no-http-string -- canonical Power BI filter schema id, not a fetched URL
+            $schema: "http://powerbi.com/product/schema#advanced",
+            target: { table, column },
+            filterType: 0,            // FilterType.Advanced
+            logicalOperator: "And",
+            conditions: [{ operator: "Is", value }]
+        } as unknown as powerbi.IFilter;
+    }
+
+    /**
+     * applyJsonFilter with the outcome surfaced in the transcript — rejections are
+     * otherwise completely silent (which is what made this bug invisible), and the
+     * positive ack distinguishes "accepted but ignored" from "never processed".
+     */
+    private applyFilter(filter: powerbi.IFilter, scope: "filter" | "selfFilter",
+        action: powerbi.FilterAction, quiet = false): void {
+        const label = `${scope}${action === powerbi.FilterAction.remove ? " clear" : ""}`;
+        const surface = (e: unknown) => {
+            const msg = (e as { message?: string })?.message ?? String(e);
+            this.addActivity(`⚠ ${label} failed: ${msg}`);
+        };
+        try {
+            const r = this.host.applyJsonFilter(filter, "general", scope, action) as unknown as {
+                then?: (f: () => void) => { catch?: (f: (e: unknown) => void) => void };
+                catch?: (f: (e: unknown) => void) => void;
+            };
+            const chained = quiet ? undefined
+                : r?.then?.(() => this.addActivity(`ⓘ ${label} acknowledged by host`));
+            (chained ?? r)?.catch?.(surface);
+        } catch (e) {
+            surface(e);
+        }
+    }
+
+    /** Empty Send: remove this visual's persisted prompt filters at both scopes. */
+    private clearPromptFilters(): void {
+        const { table, column } = this.promptTarget();
+        const f = this.buildPromptFilter(table, column, "");
+        this.applyFilter(f, "filter", powerbi.FilterAction.remove);
+        this.applyFilter(f, "selfFilter", powerbi.FilterAction.remove, true);
+        this.lastSendAt = Date.now();
+        this.addActivity("Prompt filters cleared for this visual (Send with an empty box does this).");
     }
 
     // ---------- DOM ----------
