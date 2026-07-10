@@ -334,7 +334,10 @@ Supersedes Round 6 (never run). Per the staging revelation, ALL Power Query
 work — pasting definitions AND **Close & Apply** — happens on the analyst's
 machine; the offline prep machine only imports the `.pbiviz` and arranges the
 page. Same one-question-at-a-time rules as above; each numbered step ends in
-a screenshot. The v1.0.10.0 diagnostics make the screenshots self-evidencing:
+a screenshot. **Protocol principle: every Ryan↔analyst exchange is expensive,
+so the script is a decision tree — each failure point has an in-session
+fallback or control experiment, and a session never ends at its first
+failure.** The v1.0.10.0 diagnostics make the screenshots self-evidencing:
 timestamped transcript lines, a `new instance` line proving build + instance
 lifetime (it reappearing means the host recreated the visual — expected after
 every Close & Apply), and per-data-arrival lines on the display instance
@@ -357,15 +360,35 @@ showing row count, answer snippet, and the render decision.
    its transcript logs `data: 1 row(s) … → rendering`. The embedded Snowflake
    timestamp is the round-trip proof — no Query History needed. Screenshot
    both visuals.
-5. **Liveness check:** a second never-used question → the timestamp must
-   CHANGE. Unchanged timestamp = no new query ran (reused question served
-   from Power BI's cache, or the parameter is stuck).
+   **If no echo after ~2 minutes, run the in-session fallback ladder instead
+   of stopping:**
+   - *(a)* screenshot both transcripts (the display's data-arrival lines show
+     whether ANY update landed) and check the display visual for a host error
+     icon;
+   - *(b)* **pane-filter control** (the historically proven path): drag
+     `PromptBinding[Prompt]` onto the DISPLAY visual's "Filters on this
+     visual" → Advanced filtering → `is` → a unique text → Apply filter.
+     Echo appears → the binding/parameter/query chain is fine and the fault
+     is isolated to the visual-API filter path. Remove the pane card after.
+   - *(c)* if the pane control ALSO failed → **native-slicer control**: swap
+     `PromptBinding` to the one-row definition
+     (`{{"CONTROL QUESTION 123"}}`), Close & Apply, native slicer on the
+     column, click the value, watch for the echo; then revert to zero rows.
+     Slicer fails too = the parameter binding is broken despite step 3 —
+     screenshot the binding pane again.
+5. **Liveness check** (only if some echo path worked): a second never-used
+   question → the timestamp must CHANGE. Unchanged = no new query ran
+   (reused question served from Power BI's cache, or the parameter is
+   stuck) — try a third unique question before concluding.
 6. **Full pipeline:** paste the real `CortexAnswerQuery` definition (Build it →
    step 2 → Step 3) → **Close & Apply** → ONE never-used question → hands off
    for 2–4+ minutes → answer in the display bubble + canary table. Agent-side
    observability shows the `DATA_AGENT_RUN` for this phase (note: echo tests
    never call the agent, so they won't appear there — the bubble timestamp is
-   their evidence).
+   their evidence). Canary fills but bubble doesn't → screenshot the display
+   transcript (its data-arrival lines say what the visual decided). Neither
+   fills after 5 min → ask once more with a fresh question, wait again,
+   screenshot regardless.
 7. **Empty-box Send before saving** (see Gotchas).
 
 **Optional forensics (only if step 4 shows no echo):** search history for **the
