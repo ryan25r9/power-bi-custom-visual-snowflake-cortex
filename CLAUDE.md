@@ -26,8 +26,11 @@ owned by a second developer; it has its own build/gate and does not share code w
   zero-row column persists + propagates but never resolves it. Research shows API filters DO drive
   parameters elsewhere (ChicletSlicer Identity filters per a Microsoft engineer's walkthrough;
   Basic In on populated columns; Filter By List) — likely culprit: zero-row/non-member value, not
-  the API. Round 9 (build 1.0.12.0: filter-shape selector, suggestion chips) discriminates four
-  input paths incl. the GA native Input slicer ("Is any" free text). Display/render path works.
+  the API. Round 9 killed shape+membership: ALL visual paths fail because the host normalizes every
+  visual-submitted filter to Basic In + requireSingleSelection:false, which fails the documented
+  single-select requirement of a Multi-select=No binding. Round 10 tests the last lever (binding
+  Multi-select=Yes + list-tolerant M — Chris Webb's working demo used it); else the design locks:
+  curated-question native slicer + chat display (+ pane card free text). Display/render path works.
   Read phase1/README.md "Where debugging stands" before touching phase1. Don't touch it for Phase 2
   work; CI runs its tests + pbiviz package independently.
 - `.github/workflows/ci.yml`, `.githooks/post-commit`, `CONTRIBUTING.md` — two-dev flow (branch→PR,

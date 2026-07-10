@@ -216,6 +216,8 @@ Query-reduction check.
 | 1.0.9.0 Round 4: real agent query, question from the input instance | **No answer in ANY visual — including the canary table, which showed `STATUS = IDLE`.** Filter persisted (`ⓘ` echo shows it), so the last *completed* `CortexAnswerQuery` run saw the sentinel: the parameter didn't move (or no run ever completed). Confounds: the file was re-staged offline between rounds (a `PromptBinding` edit can silently sever the Model-view parameter binding — the prime suspect), question 1 was cleared mid-flight (clearing cancels the run), and question 2's verdict may have come inside its 2–4 min window (a mid-flight DirectQuery still displays the previous result — IDLE). Query History wasn't captured. Round 5 discriminates |
 | 1.0.11.0 Round 8: three API-filter sends (15:09:42, 15:16:44, 15:18:46) — display properly bound (⚠ gone), echo probe applied, canary on-page | **Fails, instantly and cleanly.** Each send: filter persisted (`ⓘ` echo), display requeried at the exact send second… and returned the IDLE row immediately. The parameter never moved. No 3-minute ambiguity — the probe answers in seconds |
 | 1.0.11.0 Round 8, step 5b: filter-pane card `Prompt is "pane control test 99"` on the canary table | **WORKS — `ECHO [2026-07-10 15:15:10.513]: pane control test 99` in the canary.** Binding, probe, parameter resolution, and the Snowflake round-trip all proven healthy 90 seconds *before* two of the failed API sends. Same session, same column, same binding: pane card qualifies, API filter doesn't. Also confirms per-visual resolution — the card was visual-scope, so only the canary echoed while the display (no card) stayed IDLE |
+| 1.0.12.0 Round 9: all four candidate input paths vs the echo probe — T1 native Input slicer "Is any" free text; T2 member-value Basic `In` (suggestion chip); T3 arbitrary Advanced `Is`; T4 ChicletSlicer-style Identity (chip) | **All four fail identically**: filter persists, display requeries at the send second, instant IDLE — the parameter never moves. (T1 caveat: the screenshot shows the operator dropdown open with text already typed — the entry may have applied under the default, documented-unsupported "Contains any"; one careful retest pending.) |
+| Round 9, the decisive transcript detail (T3's `ⓘ` echo) | **The host rewrites every visual-submitted filter**: Advanced `Is` in → persisted as Basic `In`; `requireSingleSelection:true` in → persisted **`false`**. A visual cannot produce single-select semantics, and the Dynamic-M docs require exactly that under a Multi-select=No binding — a coherent disqualifier for every visual-API failure, and it explains the community contradiction: Chris Webb's working zero-row Filter-By-List demo ran on **Multi-select=Yes**, where the requirement doesn't apply. Multi-select=Yes is the one remaining principled lever (M must then handle a LIST parameter) |
 | Round 5 (echo probe, re-staged file): reported no echo and an empty Query History | **Inconclusive — every observable in the round was unverifiable as run.** Snowsight's History UI scopes by role/user/warehouse/time and can hide the connection's queries entirely; a reused question is served from Power BI's cache (no SQL ever issued); whether the probe M was actually installed in the file she opened wasn't evidenced; and the Model-view binding check/rebind result went unrecorded. Round 6 makes every step self-evidencing before any conclusion is drawn |
 
 | Round 7 first attempt (new analyst), Close & Apply after pasting Blocks 1–2 | **Blocked client-side:** "3 queries are blocked … CortexAnswerQuery: Unable to cast … InvocationExpressionSyntaxNode2 … to ILetExpression. Query Parameters." Parser-level M-document-shape error in the parameter-binding engine, NOT Snowflake permissions (no connection attempted) — see the Gotcha. Re-canonicalization addendum issued; the same blocks applied cleanly in Round 3 |
@@ -372,7 +374,27 @@ echo probe in → one never-used question → echo within ~30s → real query �
 hands off 2–4+ min. Round 5 as run reported nothing anywhere, but produced no
 verifiable evidence either way — see the matrix.
 
-### Round 9 (current protocol — shape/membership discrimination, one session)
+### Round 10 (current protocol — the Multi-select lever, then lock the design)
+
+Round 9 killed shape and membership as variables and surfaced the mechanism
+(see matrix): the host normalizes every visual-submitted filter to Basic `In`
++ `requireSingleSelection:false`, which fails the documented single-select
+requirement of a **Multi-select = No** binding. Round 10 therefore: (1)
+re-proves the native list-slicer path against the probe (the locked-design
+input, proven with the real agent in Round 3); (2) carefully retests the
+Input slicer with "Is any" set BEFORE typing; (3) flips the binding to
+**Multi-select = Yes** with a list-tolerant echo probe and retries the
+visual's Basic `In` — Chris Webb's working zero-row custom-visual demo ran
+Multi-select=Yes, so this is the last principled shot at free text through
+our own visual; (4) runs the real agent once through the best path (with a
+list-tolerant real query if the visual path won); (5) reverts Multi-select if
+it didn't help. If (3) fails, the design LOCKS: curated-question native
+slicer + chat display visual (+ pane card for ad-hoc free text), and the next
+build is display-polish (hide the input row on display instances, retire the
+send path). Chips note: the host sorts the suggestion category
+alphabetically — reference chips by their text, never by position.
+
+### Round 9 protocol (superseded — kept for reference)
 
 Round 8 proved the pane card resolves the parameter while our Basic `In` on
 the zero-row column doesn't; the research round showed API filters working
