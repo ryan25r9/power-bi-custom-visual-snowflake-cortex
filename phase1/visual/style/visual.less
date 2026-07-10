@@ -90,6 +90,28 @@
   }
 }
 
+.cc-suggest {
+  display: none; // shown by the visual when suggested questions exist (input mode)
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 10px;
+  .cc-chipbtn {
+    font: inherit;
+    font-size: 10px;
+    border: 1px solid #cde8f5;
+    background: #f4fbfe;
+    color: #1a6f92;
+    border-radius: 10px;
+    padding: 3px 8px;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    &:hover { background: #e2f4fc; }
+  }
+}
+
 .cc-inputrow {
   display: flex;
   gap: 6px;

@@ -3,7 +3,15 @@
  * These values live inside the .pbix. Phase 1 has no secret to store at all —
  * the Snowflake credential is on the dataset connection, not in the visual.
  */
+import powerbi from "powerbi-visuals-api";
 import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
+
+// Must match capabilities.json objects.agent.filterShape enumeration values.
+const FILTER_SHAPES: powerbi.IEnumMember[] = [
+    { displayName: "Advanced 'Is' (pane-proven)", value: "advanced" },
+    { displayName: "Basic 'In' (slicer-canonical)", value: "basic" },
+    { displayName: "Identity (ChicletSlicer-style; question must match a suggestion)", value: "identity" }
+];
 
 class AgentCard extends formattingSettings.SimpleCard {
     name = "agent";              // must match "objects.agent" in capabilities.json
@@ -71,7 +79,30 @@ class AgentCard extends formattingSettings.SimpleCard {
         value: false
     });
 
-    slices = [this.bindingTable, this.bindingColumn, this.includeContext, this.maxContextRows, this.agentHint, this.answerTimeout, this.forceInputMode];
+    // Research round 2026-07-10: custom-visual filters DO drive Dynamic M in
+    // other setups (ChicletSlicer's Identity filters; a community date-picker's
+    // Basic In on a populated column), while our Basic In on the zero-row
+    // column failed live. Shape and value-membership are live variables —
+    // switchable here so experiments need no rebuild.
+    filterShape = new formattingSettings.ItemDropdown({
+        name: "filterShape",
+        displayName: "Filter shape",
+        description: "How the question is applied as a filter. Identity requires the question to exactly match a suggested-question row.",
+        items: FILTER_SHAPES,
+        value: FILTER_SHAPES[0]
+    });
+
+    // The appended formatting instruction changes the filter value, which breaks
+    // member-value tests (the value must EQUAL a suggested-question row) and the
+    // Identity shape. Turn off for those.
+    plainTextHint = new formattingSettings.ToggleSwitch({
+        name: "plainTextHint",
+        displayName: "Plain-text answer hint",
+        description: "Append 'answer in plain sentences, no markdown' to every question.",
+        value: true
+    });
+
+    slices = [this.bindingTable, this.bindingColumn, this.includeContext, this.maxContextRows, this.agentHint, this.answerTimeout, this.forceInputMode, this.filterShape, this.plainTextHint];
 }
 
 export class VisualFormattingSettingsModel extends formattingSettings.Model {

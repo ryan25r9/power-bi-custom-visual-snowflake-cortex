@@ -8,13 +8,23 @@ minutes), and no conversation memory.
 The look is the same as the Phase 2 visual — same bubbles, same context chip — minus
 the streaming cursor and the Stop button.
 
-> **Status: mechanism PROVEN, final confirmation pending.** Round 3 (2026-07-09,
-> build 1.0.8.0) demonstrated the full chain live: a question typed in the input
-> instance moved the Dynamic M parameter and the display instance rendered the
-> result — the applyJsonFilter → parameter link that blocked builds 1.0.0–1.0.5
-> works under the two-instance design. One last-mile bug remained (the display
-> visual swallowed the real agent answer after a Power Query Close & Apply;
-> fixed in 1.0.9.0) — see [Where debugging stands](#where-debugging-stands).
+> **Status (2026-07-10): the input path is down to shape/membership variables —
+> Round 9 discriminates them in one session.** Round 8's screenshot-timestamped
+> discrimination: a filter-pane card moved the Dynamic M parameter
+> (`ECHO [15:15:10]` in seconds), while the visual's `applyJsonFilter` (Basic
+> `In`, zero-row column) — same column, same verified binding, 90 seconds
+> later — persisted, propagated to other visuals' queries, and never resolved
+> the parameter. A same-day research pass then showed API filters DO drive
+> Dynamic M in other configurations (a Microsoft engineer's ADX walkthrough
+> uses ChicletSlicer's **Identity** filters for exactly this; a community
+> date-picker reports our exact Basic-In shape working on a **populated**
+> column; Chris Webb demos Filter By List feeding arbitrary values). The likely
+> culprit is our **zero-row column / non-member value**, not the API. Round 9
+> tests, in one session: the GA native **Input slicer** (free text, "Is any"),
+> member-value Basic `In`, arbitrary-value Advanced `Is`, and ChicletSlicer-
+> style Identity — with the pane card as the already-proven fallback. (Round
+> 3's unverified visual-driven echo would be explained if membership is the
+> variable and that file still carried a populated row.)
 
 ## How it works
 
@@ -115,11 +125,35 @@ These were all hit live against a real tenant. They shape the design below; don'
 
 ## Where debugging stands
 
-Last updated 2026-07-10, visual build **1.0.11.0** (fixes the sticky
-no-answer-field warning that latched onto input instances, clears the warning
-live when the field gets bound, disambiguates the data-line text — "empty
-(IDLE/blank row)" vs "empty (no Answer text field bound)" — and points the
-input's sent-message at the canary too). 1.0.10.0 added the screenshot-grade
+Last updated 2026-07-10, visual build **1.0.12.0** — the shape/membership
+experiment build: format-pane **Filter shape** selector (Advanced `Is` /
+Basic `In` / ChicletSlicer-style **Identity**), **Plain-text answer hint**
+toggle (member-value tests need the filter value to equal the suggested-
+question row exactly), clickable **suggested-question chips** in input mode
+(populated `PromptBinding` rows; also the intended pick-a-question UX), a
+transcript line per send stating the shape used and whether the question
+matched a suggestion, and the categorical mapping's row cap raised 1 → 100.
+
+**Research round (2026-07-10, three-agent sweep with citations):** the docs
+scope Dynamic M origins as "slicer or filter card" and MS support confirms URL
+filters don't qualify — but nothing excludes the visual filter API, and three
+sources show it working: ChicletSlicer driving parameters via **Identity
+filters** in a Microsoft engineer's ADX walkthrough (dataexplorer.azure.com
+blog, Apr 2024), an Aug-2025 community date-picker using exactly our Basic
+`In`+`requireSingleSelection` shape on a **populated** disconnected column
+("worked well with M parameter"), and Chris Webb's Filter By List demo on a
+zero-row column (Multi-select=Yes). Also: the "Text slicer" preview became the
+GA core **Input slicer** in Feb 2026 — free-typed text through a real slicer,
+with an exact-match **"Is any"** operator (the default "Contains any" and 5 of
+its 7 operators are on the Dynamic-M unsupported-operations list); nobody has
+publicly tested it against a parameter binding. Key references:
+learn.microsoft.com/power-bi/visuals/power-bi-visualization-input-slicer,
+learn.microsoft.com/power-bi/connect-data/desktop-dynamic-m-query-parameters,
+blog.crossjoin.co.uk (2023-01-29), community.fabric.microsoft.com threads
+m-p/4799696 and td-p/1888913.
+
+1.0.11.0 fixed the sticky no-answer-field warning and disambiguated the
+data-line text. 1.0.10.0 added the screenshot-grade
 diagnostics: every transcript line is wall-clock timestamped; each instance
 prints a `Cortex Chat v<version> — new instance` line at birth, so a repeat of
 that line mid-session is visible proof the host recreated the visual and wiped
@@ -180,6 +214,8 @@ Query-reduction check.
 | 1.0.8.0 Round 3: real agent query swapped back (Close & Apply), questions asked | **Agent ran, chat stayed silent.** The answer rendered in a native debug table bound to `CortexAnswerQuery` but never in the chat visual — render-side bug, fixed in 1.0.9.0 (see above) |
 | 1.0.8.0 Round 3: native slicer on a one-row `PromptBinding` | **Works.** Slicer selection ran the agent end to end — binding healthy, suggested-questions fallback proven viable |
 | 1.0.9.0 Round 4: real agent query, question from the input instance | **No answer in ANY visual — including the canary table, which showed `STATUS = IDLE`.** Filter persisted (`ⓘ` echo shows it), so the last *completed* `CortexAnswerQuery` run saw the sentinel: the parameter didn't move (or no run ever completed). Confounds: the file was re-staged offline between rounds (a `PromptBinding` edit can silently sever the Model-view parameter binding — the prime suspect), question 1 was cleared mid-flight (clearing cancels the run), and question 2's verdict may have come inside its 2–4 min window (a mid-flight DirectQuery still displays the previous result — IDLE). Query History wasn't captured. Round 5 discriminates |
+| 1.0.11.0 Round 8: three API-filter sends (15:09:42, 15:16:44, 15:18:46) — display properly bound (⚠ gone), echo probe applied, canary on-page | **Fails, instantly and cleanly.** Each send: filter persisted (`ⓘ` echo), display requeried at the exact send second… and returned the IDLE row immediately. The parameter never moved. No 3-minute ambiguity — the probe answers in seconds |
+| 1.0.11.0 Round 8, step 5b: filter-pane card `Prompt is "pane control test 99"` on the canary table | **WORKS — `ECHO [2026-07-10 15:15:10.513]: pane control test 99` in the canary.** Binding, probe, parameter resolution, and the Snowflake round-trip all proven healthy 90 seconds *before* two of the failed API sends. Same session, same column, same binding: pane card qualifies, API filter doesn't. Also confirms per-visual resolution — the card was visual-scope, so only the canary echoed while the display (no card) stayed IDLE |
 | Round 5 (echo probe, re-staged file): reported no echo and an empty Query History | **Inconclusive — every observable in the round was unverifiable as run.** Snowsight's History UI scopes by role/user/warehouse/time and can hide the connection's queries entirely; a reused question is served from Power BI's cache (no SQL ever issued); whether the probe M was actually installed in the file she opened wasn't evidenced; and the Model-view binding check/rebind result went unrecorded. Round 6 makes every step self-evidencing before any conclusion is drawn |
 
 | Round 7 first attempt (new analyst), Close & Apply after pasting Blocks 1–2 | **Blocked client-side:** "3 queries are blocked … CortexAnswerQuery: Unable to cast … InvocationExpressionSyntaxNode2 … to ILetExpression. Query Parameters." Parser-level M-document-shape error in the parameter-binding engine, NOT Snowflake permissions (no connection attempted) — see the Gotcha. Re-canonicalization addendum issued; the same blocks applied cleanly in Round 3 |
@@ -336,19 +372,49 @@ echo probe in → one never-used question → echo within ~30s → real query �
 hands off 2–4+ min. Round 5 as run reported nothing anywhere, but produced no
 verifiable evidence either way — see the matrix.
 
-### Round 8 (current protocol — analyst-run end to end)
+### Round 9 (current protocol — shape/membership discrimination, one session)
 
-Round 7 as-run (see matrix) surfaced two configuration faults, so Round 8
-differs in three ways: the display instance's **Answer text binding is now an
-explicit verified step** (Round 7's display had nothing bound — the ⚠ warning
-caught it); **`PromptBinding` is NOT re-pasted** (it's already applied;
-re-creating that table is exactly the operation that severs the parameter
-binding); and the **canary table is the primary echo observable** (a chat
-misconfiguration can't hide the result). Ground rules unchanged: ALL Power
-Query work — pasting definitions AND **Close & Apply** — happens on the
-analyst's machine; one question at a time; each numbered step ends in a
-screenshot; every failure point has an in-session fallback — a session never
-ends at its first failure.
+Round 8 proved the pane card resolves the parameter while our Basic `In` on
+the zero-row column doesn't; the research round showed API filters working
+elsewhere via other shapes and populated columns. Round 9 runs four candidate
+input paths against the echo probe in a single session, cheapest first, plus
+the real agent through whichever wins. Requires build **1.0.12.0** (Filter
+shape selector, Plain-text hint toggle, suggestion chips) and the curated
+three-question `PromptBinding` (Block 1c in the analyst script). Ground rules
+unchanged: analyst does ALL Power Query work including Close & Apply; one
+question/action at a time; screenshot per step; in-session fallbacks, never
+stop at first failure. The echo stub stays applied from Round 8 (verify in
+step 1); the canary table remains the primary observable.
+
+The four paths:
+
+| Path | Mechanism | Evidence going in |
+|---|---|---|
+| T1 | Native **Input slicer**, operator **"Is any"**, free-typed text | GA since Feb 2026; slicer = documented qualifying origin; arbitrary-value behavior publicly untested |
+| T2 | Our visual, **Basic `In`**, question = suggestion chip (member value) | Aug-2025 date-picker report: exact shape worked on a populated column |
+| T3 | Our visual, **Advanced `Is`**, arbitrary text | Pane card's shape; never validly tested from the API in a two-instance setup |
+| T4 | Our visual, **Identity** filter, suggestion chip | ChicletSlicer's mechanism in a Microsoft engineer's Dynamic-M walkthrough |
+
+Steps: (1) version check v1.0.12.0 + confirm the echo stub is still the
+applied `CortexAnswerQuery`; (2) T1 — add the Input slicer, bind
+`PromptBinding[Prompt]`, set operator to **Is any** (the default "Contains
+any" is documented-unsupported for Dynamic M), type a unique text, watch the
+canary ~30s; (3) paste the curated three-question `PromptBinding` (Block 1c) →
+Close & Apply → **re-check Bind to parameter** (screenshot — this edit can
+sever it) → suggestion chips appear on the input instance; (4) T2 — Format →
+Cortex Agent → Filter shape = Basic `In`, Plain-text hint = Off → click chip
+#1 → Send (`ⓘ filter shape=basic, matches suggestion #1`) → canary ~30s;
+(5) T3 — shape = Advanced `Is` → type an arbitrary unique question → Send →
+canary ~30s; (6) T4 — shape = Identity → click chip #2 → Send → canary ~30s;
+(7) real run: paste the real `CortexAnswerQuery` (Build it → step 2 → Step 3)
+→ Close & Apply → re-check binding → one question via the best passing path →
+hands off 2–4+ min → answer in display bubble + canary; (8) clear (empty-box
+Send + clear the slicer), save. If NOTHING passes: the pane card remains the
+proven input (demo-viable), and the next lever is the binding's
+**Multi-select = Yes** (Chris Webb's zero-row demo used it — but the M then
+receives a LIST; `CortexAnswerQuery` must be adapted before flipping it).
+
+### Round 8 protocol (superseded — kept for the fallback ladder)
 
 1. **Build check:** open the file; both chat visuals show
    `ⓘ Cortex Chat v1.0.11.0 — new instance` in their transcripts. Ignore any

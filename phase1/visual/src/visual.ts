@@ -32,7 +32,7 @@ import DataView = powerbi.DataView;
 
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import { VisualFormattingSettingsModel } from "./settings";
-import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource, buildPromptFilter } from "./contextBuilder";
+import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource, buildPromptFilter, identityPromptFilter, findPromptCategory } from "./contextBuilder";
 
 // Fallback if the format-pane "Answer timeout (seconds)" setting is unset.
 // Agent runs routinely take minutes (200s+ observed live), so stay generous.
@@ -42,7 +42,7 @@ const DEFAULT_ANSWER_TIMEOUT_SECS = 600;
 // build ran and when each instance was (re)created — Desktop recreates visuals
 // on every Close & Apply, wiping the transcript, and that wipe itself is
 // diagnostic. KEEP IN SYNC with pbiviz.json "version".
-const VISUAL_VERSION = "1.0.11.0";
+const VISUAL_VERSION = "1.0.12.0";
 
 export class Visual implements IVisual {
     private host: IVisualHost;
@@ -65,6 +65,7 @@ export class Visual implements IVisual {
     private statusEl: HTMLElement;
     private contextChip: HTMLElement;
     private messagesEl: HTMLElement;
+    private suggestEl: HTMLElement;
     private inputEl: HTMLTextAreaElement;
     private sendBtn: HTMLButtonElement;
 
@@ -85,6 +86,8 @@ export class Visual implements IVisual {
             this.dataView = this.dataViews[0];
             this.inputMode = detectInputMode(this.dataViews,
                 this.settings.agentCard.forceInputMode.value);
+            this.renderSuggestions(this.inputMode
+                ? (findPromptCategory(this.dataViews)?.values ?? []) : []);
             if (this.inputMode) {
                 this.contextChip.textContent = "input mode";
                 this.contextChip.title = "This instance only sends questions. Answers appear in the display instance (the one with Answer text bound).";
@@ -193,8 +196,12 @@ export class Visual implements IVisual {
             prompt = `${block}\n\nUSER QUESTION: ${question}`;
         }
         // The visual renders plain text only (textContent — the XSS posture), so ask
-        // the agent not to send markdown it can't display.
-        prompt += "\n\nFormat the answer as plain sentences. Do not use markdown formatting or markdown tables.";
+        // the agent not to send markdown it can't display. Toggleable: the suffix
+        // changes the filter VALUE, which breaks member-value tests and the
+        // Identity shape (both need value == suggested-question row, exactly).
+        if (this.settings.agentCard.plainTextHint.value) {
+            prompt += "\n\nFormat the answer as plain sentences. Do not use markdown formatting or markdown tables.";
+        }
         // The M query inlines the prompt inside a $$...$$ literal; a literal "$$"
         // anywhere in it (question or context cell values) would terminate the
         // literal and break the SQL. Transport constraint, not sanitization.
@@ -205,7 +212,19 @@ export class Visual implements IVisual {
         // The value travels as data (a filter value into the M query), so we do
         // not escape it here — the M query handles quoting (see phase1/README.md).
         const { table, column } = this.promptTarget();
-        const filter = buildPromptFilter(table, column, prompt);
+        // Shape experiment (see contextBuilder.buildPromptFilter). Identity needs
+        // the prompt to equal one of this visual's bound suggested-question rows.
+        let shape = String(this.settings.agentCard.filterShape.value?.value ?? "advanced");
+        const suggestions = findPromptCategory(this.dataViews)?.values ?? [];
+        const memberIdx = suggestions.findIndex(v => String(v) === prompt);
+        if (shape === "identity" && memberIdx < 0) {
+            this.addActivity("⚠ Identity shape needs the question to exactly match a suggestion (and 'Plain-text answer hint' off) — falling back to Advanced Is.");
+            shape = "advanced";
+        }
+        const filter = shape === "identity"
+            ? identityPromptFilter(memberIdx)
+            : buildPromptFilter(table, column, prompt, shape as "basic" | "advanced");
+        this.addActivity(`ⓘ filter shape=${shape}${memberIdx >= 0 ? `, matches suggestion #${memberIdx + 1}` : ", no suggestion match"}`);
         // Outbound scope ONLY. A visual's applied filter never enters its own query
         // (slicer semantics — three live tests), so selfFilter buys nothing; worse,
         // builds ≤1.0.5.0 left stale selfFilters (an old question) persisted on this
@@ -303,7 +322,7 @@ export class Visual implements IVisual {
     /** Empty Send: remove this visual's persisted prompt filters at both scopes. */
     private clearPromptFilters(): void {
         const { table, column } = this.promptTarget();
-        const f = buildPromptFilter(table, column, "");
+        const f = buildPromptFilter(table, column, "", "basic");
         this.applyFilter(f, "filter", powerbi.FilterAction.remove);
         this.applyFilter(f, "selfFilter", powerbi.FilterAction.remove);
         this.lastSendAt = Date.now();
@@ -326,6 +345,11 @@ export class Visual implements IVisual {
         // A repeat of this line mid-session = the host recreated the visual
         // (typical cause: Power Query Close & Apply) and wiped the transcript.
         this.addActivity(`ⓘ Cortex Chat v${VISUAL_VERSION} — new instance (transcript starts here)`);
+
+        // Suggested-question chips (input mode with a populated binding table):
+        // click-to-fill makes member-value/Identity tests typo-proof, and it's
+        // the intended "pick a question" UX if free text ends up unsupported.
+        this.suggestEl = el("div", "cc-suggest", this.root);
 
         const inputRow = el("div", "cc-inputrow", this.root);
         this.inputEl = el("textarea", "cc-input", inputRow) as HTMLTextAreaElement;
@@ -352,6 +376,18 @@ export class Visual implements IVisual {
         // sequencing of these lines is often the whole story.
         el("div", "cc-activity", this.messagesEl).textContent = `${nowHMS()} ${text}`;
         this.scrollDown();
+    }
+
+    /** Clickable suggested-question chips — fill the input box with the exact row value. */
+    private renderSuggestions(values: powerbi.PrimitiveValue[]): void {
+        this.suggestEl.replaceChildren();
+        this.suggestEl.style.display = values.length ? "flex" : "none";
+        for (const v of values.slice(0, 8)) {
+            const b = el("button", "cc-chipbtn", this.suggestEl) as HTMLButtonElement;
+            b.textContent = String(v);
+            b.title = "Click to fill the question box with this exact text";
+            b.onclick = () => { this.inputEl.value = String(v); this.inputEl.focus(); };
+        }
     }
 
     private refreshContextChip(): void {

@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource, buildPromptFilter } from "./build/contextBuilder.js";
+import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource, buildPromptFilter, identityPromptFilter, findPromptCategory } from "./build/contextBuilder.js";
 
 /** Fake DataView. cols: [{displayName, isMeasure?, answer?}]; answer:true tags the answerText role. */
 function makeDataView(cols, rows) {
@@ -135,8 +135,8 @@ test("11. findPromptSource: prefers the categorical source, falls back to metada
     assert.equal(findPromptSource([displayDv()]), undefined);
 });
 
-test("12. buildPromptFilter emits the slicer-canonical shape (Basic In, one value, single-select)", () => {
-    const f = buildPromptFilter("PromptBinding", "Prompt", "What changed?");
+test("12. buildPromptFilter basic: slicer-canonical shape (Basic In, one value, single-select)", () => {
+    const f = buildPromptFilter("PromptBinding", "Prompt", "What changed?", "basic");
     assert.equal(f.$schema, "http://powerbi.com/product/schema#basic");
     assert.deepEqual(f.target, { table: "PromptBinding", column: "Prompt" });
     assert.equal(f.filterType, 1, "FilterType.Basic");
@@ -144,4 +144,29 @@ test("12. buildPromptFilter emits the slicer-canonical shape (Basic In, one valu
     assert.deepEqual(f.values, ["What changed?"]);
     assert.equal(f.requireSingleSelection, true,
         "Dynamic M docs require single-select semantics when the binding is Multi-select=No");
+});
+
+test("13. buildPromptFilter advanced: pane-proven shape (Advanced, single Is condition)", () => {
+    const f = buildPromptFilter("PromptBinding", "Prompt", "Any question?", "advanced");
+    assert.equal(f.$schema, "http://powerbi.com/product/schema#advanced");
+    assert.equal(f.filterType, 0, "FilterType.Advanced");
+    assert.equal(f.logicalOperator, "And");
+    assert.deepEqual(f.conditions, [{ operator: "Is", value: "Any question?" }]);
+});
+
+test("14. identityPromptFilter: ChicletSlicer-verbatim shape (Identity, In, index target)", () => {
+    const f = identityPromptFilter(2);
+    assert.equal(f.$schema, "https://powerbi.com/product/schema#identity");
+    assert.equal(f.filterType, 8, "FilterType.Identity");
+    assert.equal(f.operator, "In");
+    assert.deepEqual(f.target, [2], "target is the category identity index array");
+});
+
+test("15. findPromptCategory returns the promptField category with its values", () => {
+    const dv = {
+        metadata: { columns: [promptCol] },
+        categorical: { categories: [{ source: promptCol, values: ["Q one", "Q two"] }] }
+    };
+    assert.deepEqual(findPromptCategory([dv])?.values, ["Q one", "Q two"]);
+    assert.equal(findPromptCategory([{ metadata: { columns: [] } }]), undefined);
 });

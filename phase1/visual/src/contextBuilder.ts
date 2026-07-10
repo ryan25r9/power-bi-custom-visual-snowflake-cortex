@@ -110,14 +110,25 @@ export function findPromptSource(dataViews: DataView[] | undefined): powerbi.Dat
 }
 
 /**
- * The outbound prompt filter — the EXACT shape the documented Dynamic-M driver
- * (a single-select slicer) produces: Basic "In", one value, requireSingleSelection
- * true. The docs require single-select semantics when the parameter binding is
- * Multi-select = No, and the host was observed persisting our earlier Advanced
- * "Is" normalized to Basic "In" with requireSingleSelection FALSE — which
- * plausibly disqualifies the filter from parameter resolution.
+ * The outbound prompt filter, in a selectable shape. Live evidence (Round 8)
+ * showed Basic "In" + requireSingleSelection on a zero-row column persisting and
+ * propagating but never resolving the parameter, while a pane-card Advanced "is"
+ * resolved it in seconds; community evidence (ChicletSlicer/date-picker/Filter By
+ * List) shows visual-API filters CAN resolve parameters in other shapes/setups.
+ * Shape is therefore a live experimental variable, selected in the format pane.
  */
-export function buildPromptFilter(table: string, column: string, value: string): powerbi.IFilter {
+export function buildPromptFilter(table: string, column: string, value: string,
+    shape: "basic" | "advanced"): powerbi.IFilter {
+    if (shape === "advanced") {
+        return {
+            // eslint-disable-next-line powerbi-visuals/no-http-string -- canonical Power BI filter schema id, not a fetched URL
+            $schema: "http://powerbi.com/product/schema#advanced",
+            target: { table, column },
+            filterType: 0,            // FilterType.Advanced
+            logicalOperator: "And",
+            conditions: [{ operator: "Is", value }]
+        } as unknown as powerbi.IFilter;
+    }
     return {
         // eslint-disable-next-line powerbi-visuals/no-http-string -- canonical Power BI filter schema id, not a fetched URL
         $schema: "http://powerbi.com/product/schema#basic",
@@ -127,6 +138,30 @@ export function buildPromptFilter(table: string, column: string, value: string):
         values: [value],
         requireSingleSelection: true
     } as unknown as powerbi.IFilter;
+}
+
+/**
+ * ChicletSlicer-style Identity filter — the shape a Microsoft engineer's ADX
+ * walkthrough uses to drive a Dynamic M parameter from a custom visual. Selects
+ * a category ROW of this visual's own dataView by identity index, so it only
+ * works when the question exactly matches a suggested-question row.
+ */
+export function identityPromptFilter(identityIndex: number): powerbi.IFilter {
+    return {
+        $schema: "https://powerbi.com/product/schema#identity",
+        filterType: 8,            // FilterType.Identity
+        operator: "In",
+        target: [identityIndex]
+    } as unknown as powerbi.IFilter;
+}
+
+/** The bound prompt category (suggested-question rows), from whichever dataView carries it. */
+export function findPromptCategory(dataViews: DataView[] | undefined): powerbi.DataViewCategoryColumn | undefined {
+    for (const dv of dataViews ?? []) {
+        const cat = dv?.categorical?.categories?.find(c => !!c.source?.roles?.["promptField"]);
+        if (cat) return cat;
+    }
+    return undefined;
 }
 
 /** First non-empty value in the column bound to the "Answer text" role, or null. */

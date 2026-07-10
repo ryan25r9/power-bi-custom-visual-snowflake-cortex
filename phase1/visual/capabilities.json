@@ -27,7 +27,7 @@
       "categorical": {
         "categories": {
           "for": { "in": "promptField" },
-          "dataReductionAlgorithm": { "top": { "count": 1 } }
+          "dataReductionAlgorithm": { "top": { "count": 100 } }
         }
       }
     },
@@ -69,7 +69,17 @@
         "maxContextRows": { "type": { "numeric": true } },
         "agentHint": { "type": { "text": true } },
         "answerTimeoutSecs": { "type": { "numeric": true } },
-        "forceInputMode": { "type": { "bool": true } }
+        "forceInputMode": { "type": { "bool": true } },
+        "plainTextHint": { "type": { "bool": true } },
+        "filterShape": {
+          "type": {
+            "enumeration": [
+              { "displayName": "Advanced 'Is' (pane-proven)", "value": "advanced" },
+              { "displayName": "Basic 'In' (slicer-canonical)", "value": "basic" },
+              { "displayName": "Identity (ChicletSlicer-style; question must match a suggestion)", "value": "identity" }
+            ]
+          }
+        }
       }
     },
     "general": {
