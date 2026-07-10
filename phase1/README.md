@@ -163,6 +163,7 @@ Query-reduction check.
 | 1.0.8.0 Round 3: real agent query swapped back (Close & Apply), questions asked | **Agent ran, chat stayed silent.** The answer rendered in a native debug table bound to `CortexAnswerQuery` but never in the chat visual — render-side bug, fixed in 1.0.9.0 (see above) |
 | 1.0.8.0 Round 3: native slicer on a one-row `PromptBinding` | **Works.** Slicer selection ran the agent end to end — binding healthy, suggested-questions fallback proven viable |
 | 1.0.9.0 Round 4: real agent query, question from the input instance | **No answer in ANY visual — including the canary table, which showed `STATUS = IDLE`.** Filter persisted (`ⓘ` echo shows it), so the last *completed* `CortexAnswerQuery` run saw the sentinel: the parameter didn't move (or no run ever completed). Confounds: the file was re-staged offline between rounds (a `PromptBinding` edit can silently sever the Model-view parameter binding — the prime suspect), question 1 was cleared mid-flight (clearing cancels the run), and question 2's verdict may have come inside its 2–4 min window (a mid-flight DirectQuery still displays the previous result — IDLE). Query History wasn't captured. Round 5 discriminates |
+| Round 5 (echo probe, re-staged file): reported no echo and an empty Query History | **Inconclusive — every observable in the round was unverifiable as run.** Snowsight's History UI scopes by role/user/warehouse/time and can hide the connection's queries entirely; a reused question is served from Power BI's cache (no SQL ever issued); whether the probe M was actually installed in the file she opened wasn't evidenced; and the Model-view binding check/rebind result went unrecorded. Round 6 makes every step self-evidencing before any conclusion is drawn |
 
 **Root cause of the Test B failure (fixed in 1.0.6.0):** the two
 `dataViewMappings` condition sets **overlapped** — with only the prompt field
@@ -255,7 +256,7 @@ let
     if Text.Trim(PromptParameter) = "" or PromptParameter = "__no_prompt__" then
       "SELECT CAST(NULL AS STRING) AS ANSWER_TEXT, CAST(NULL AS STRING) AS GENERATED_SQL, 'IDLE' AS STATUS"
     else
-      "SELECT 'ECHO: " & Text.Replace(PromptParameter, "'", "''") & "' AS ANSWER_TEXT, CAST(NULL AS STRING) AS GENERATED_SQL, 'ECHO' AS STATUS",
+      "SELECT 'ECHO [' || CURRENT_TIMESTAMP()::string || ']: " & Text.Replace(PromptParameter, "'", "''") & "' AS ANSWER_TEXT, CAST(NULL AS STRING) AS GENERATED_SQL, 'ECHO' AS STATUS",
 
   Result = Value.NativeQuery(Db, Sql, null, [EnableFolding = true])
 in
@@ -264,10 +265,14 @@ in
 
 To restore, paste back the full real definition from step 2 → Step 3 above
 (same query, agent call instead of the echo `SELECT`). If the filter →
-parameter link works, the display instance's bubble fills with `ECHO: <your
-question>` within seconds, and Query History shows the trivial `SELECT`. Every
-send is near-free, so you can iterate on the visual side rapidly and only run
-the real agent once the echo works.
+parameter link works, the display instance's bubble fills with
+`ECHO [<snowflake timestamp>]: <your question>` within seconds. The embedded
+timestamp makes the probe self-evidencing: a **fresh timestamp proves a live
+Snowflake round-trip at that moment** (no Query History lookup needed), while
+an unchanged timestamp means no new query ran — i.e. a Power BI cache hit from
+a reused question, or the parameter didn't move. Every send is near-free, so
+iterate on the visual side rapidly and only run the real agent once the echo
+works.
 
 ### Round 5 (re-verify after the Round 4 failure)
 
@@ -291,13 +296,53 @@ are file-state and procedure, in this order:
    what "still running" looks like. Ground truth is Snowflake **Query
    History**, which Round 4 didn't capture.
 
-Protocol: verify/fix the binding (offline) → echo probe in (instant ground
-truth) → one never-used question → echo in display + canary within ~30s →
-swap the real query in → one never-used question → hands off, wait the full
-2–4+ min → answer in display + canary. Query History checked at each failure
-point; also pull History for the Round 4 timestamps — whether those
-`DATA_AGENT_RUN`s ever fired/completed retroactively settles what Round 4 was.
-When done, **clear with an empty-box Send before saving** (see Gotchas).
+Protocol (superseded by Round 6 below): verify/fix the binding (offline) →
+echo probe in → one never-used question → echo within ~30s → real query →
+hands off 2–4+ min. Round 5 as run reported nothing anywhere, but produced no
+verifiable evidence either way — see the matrix.
+
+### Round 6 (operator-proof re-run — every step self-evidencing)
+
+Round 6 removes execution trust as a variable. Same one-question-at-a-time
+rules as above; each numbered step ends in a screenshot.
+
+1. **Binding state (offline, before sending the file):** Model view →
+   `PromptBinding[Prompt]` → Properties → Advanced → **Bind to parameter**
+   shows `PromptParameter`. Screenshot it. Rebind first if empty — and record
+   that it WAS empty (that fact alone would explain Rounds 4–5).
+2. **Probe verification (in the opened file):** Power Query →
+   `CortexAnswerQuery` → Advanced Editor → confirm the `Sql` step is the
+   **timestamped echo probe** above. Screenshot. (If it's the agent
+   definition, the previous round's "wait ~30s for an echo" was actually a
+   3-minute agent run — a false negative by design.)
+3. **Echo with proof:** one never-used question in the input instance → Send →
+   within ~30s the display bubble reads `ECHO [<timestamp>]: <question>`. The
+   embedded Snowflake timestamp is the round-trip proof — no Query History
+   needed. Screenshot.
+4. **Liveness check:** a second never-used question → the timestamp must
+   CHANGE. Unchanged timestamp = no new query ran (reused question served
+   from Power BI's cache, or the parameter is stuck).
+5. **Only if no echo:** run this in a Snowsight worksheet (own-user scope —
+   immune to the History UI's role/user/time/warehouse filters, since Desktop
+   signs in as the same user) and screenshot the output:
+
+   ```sql
+   SELECT start_time, execution_status, total_elapsed_time/1000 AS secs,
+          LEFT(query_text, 140) AS query_snippet
+   FROM TABLE(DBS_ANALYTICS_AI.INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER(RESULT_LIMIT => 1000))
+   WHERE (query_text ILIKE '%ECHO%' OR query_text ILIKE '%DATA_AGENT_RUN%')
+     AND start_time > DATEADD('hour', -8, CURRENT_TIMESTAMP())
+   ORDER BY start_time DESC;
+   ```
+
+   Rows present = queries ran and the earlier "empty History" was a UI-filter
+   artifact; genuinely zero rows with a verified probe and binding = the
+   parameter is not moving, which with steps 1–2 evidenced would be new
+   information worth a fresh-pbix rebuild of the binding.
+6. **Full pipeline:** echo + changing timestamps proven → paste the real
+   definition (Build it → step 2 → Step 3) → ONE never-used question → hands
+   off for 2–4+ minutes → answer in the display bubble + canary table.
+7. **Empty-box Send before saving** (see Gotchas).
 
 **Also since 1.0.5.0:** the prompt ends with a plain-text formatting
 instruction, because the agent returned a markdown table and the visual
