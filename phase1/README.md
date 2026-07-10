@@ -668,6 +668,13 @@ transcript also echoes what the host actually persisted (`ⓘ` lines).
   cache table would need Snowflake objects; Phase 1 deliberately creates none).
   Asking the *exact* same question twice in a row may also not produce a new data
   update — change the question or a filter.
+- **"Send report context" resets to On for every fresh instance** (it defaults
+  On — the feature is the product's point), so it reappears after each
+  clean-slate round. Harmless during testing either way: input-mode sends skip
+  context entirely by code, and a display-instance send with no Context fields
+  bound only prepends a fixed "no context available" boilerplate block — no
+  effect on the filter→parameter mechanics. It starts mattering (by design)
+  once real fields are bound for the demo.
 - **Clear before you save.** The input instance's outbound prompt filter persists
   in the .pbix. A file saved with a live question re-runs the full (billable,
   ~3-minute) agent query on every open — and since 1.0.9.0 renders that stale
