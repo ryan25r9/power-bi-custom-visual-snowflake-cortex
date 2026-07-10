@@ -38,6 +38,12 @@ import { buildContextBlock, readAnswerText, detectInputMode, findPromptSource, b
 // Agent runs routinely take minutes (200s+ observed live), so stay generous.
 const DEFAULT_ANSWER_TIMEOUT_SECS = 600;
 
+// Shown in the transcript's instance-load line so test screenshots prove which
+// build ran and when each instance was (re)created — Desktop recreates visuals
+// on every Close & Apply, wiping the transcript, and that wipe itself is
+// diagnostic. KEEP IN SYNC with pbiviz.json "version".
+const VISUAL_VERSION = "1.0.10.0";
+
 export class Visual implements IVisual {
     private host: IVisualHost;
     private settings: VisualFormattingSettingsModel;
@@ -84,6 +90,13 @@ export class Visual implements IVisual {
                 this.contextChip.title = "This instance only sends questions. Answers appear in the display instance (the one with Answer text bound).";
             } else {
                 this.refreshContextChip();
+                // A display instance without the answer column can never show an
+                // answer — make that misconfiguration visible in screenshots.
+                const hasAnswerRole = this.dataViews.some(dv =>
+                    !!dv?.metadata?.columns?.some(c => !!c.roles?.["answerText"]));
+                if (!hasAnswerRole && !this.busy) {
+                    this.setStatus("⚠ No 'Answer text' field bound — answers cannot display in this instance.");
+                }
             }
 
             // DIAGNOSTIC: show what the host says our filter state is. options.jsonFilters
@@ -111,13 +124,25 @@ export class Visual implements IVisual {
             const isDataUpdate = (options.type & powerbi.VisualUpdateType.Data) !== 0;
             if (!this.inputMode && isDataUpdate) {
                 const answer = readAnswerText(this.dataView);
+                const rows = this.dataView?.table?.rows?.length ?? 0;
+                // One transcript line per data arrival: what came in and what this
+                // visual decided to do with it. This is the display-side counterpart
+                // of the input instance's filter-state echo — together the two
+                // screenshots reconstruct a whole test round.
+                const snippet = answer
+                    ? `"${answer.slice(0, 60)}${answer.length > 60 ? "…" : ""}"`
+                    : "empty (IDLE row or no answer column)";
                 if (answer && answer !== this.lastAnswer) {
+                    this.addActivity(`ⓘ data: ${rows} row(s), ANSWER_TEXT ${snippet} → rendering`);
                     this.lastAnswer = answer;
                     this.finishTurn(answer);
                 } else if (!answer) {
                     // IDLE row (filters cleared / parameter back to the sentinel):
                     // reset the dedupe so re-asking the same question renders again.
+                    this.addActivity(`ⓘ data: ${rows} row(s), ANSWER_TEXT ${snippet} → dedupe reset`);
                     this.lastAnswer = "";
+                } else {
+                    this.addActivity(`ⓘ data: ${rows} row(s), ANSWER_TEXT ${snippet} → same as last, skipped`);
                 }
             }
 
@@ -293,6 +318,10 @@ export class Visual implements IVisual {
 
         this.messagesEl = el("div", "cc-messages", this.root);
         this.addBubble("assistant", "Hi! Ask me about the data on this page. I'll run your question against Snowflake and bring back an answer — it takes a few seconds, and arrives all at once (no live typing in this version).");
+        // Screenshots must prove which build ran and when this instance was born.
+        // A repeat of this line mid-session = the host recreated the visual
+        // (typical cause: Power Query Close & Apply) and wiped the transcript.
+        this.addActivity(`ⓘ Cortex Chat v${VISUAL_VERSION} — new instance (transcript starts here)`);
 
         const inputRow = el("div", "cc-inputrow", this.root);
         this.inputEl = el("textarea", "cc-input", inputRow) as HTMLTextAreaElement;
@@ -315,7 +344,9 @@ export class Visual implements IVisual {
 
     /** Muted one-liner in the transcript — used to surface otherwise-silent errors. */
     private addActivity(text: string): void {
-        el("div", "cc-activity", this.messagesEl).textContent = text;
+        // Local wall-clock prefix: analysts debug from screenshots, and the
+        // sequencing of these lines is often the whole story.
+        el("div", "cc-activity", this.messagesEl).textContent = `${nowHMS()} ${text}`;
         this.scrollDown();
     }
 
@@ -337,4 +368,8 @@ function el(tag: string, cls: string, parent: HTMLElement): HTMLElement {
     if (cls) e.className = cls;
     parent.appendChild(e);
     return e;
+}
+
+function nowHMS(): string {
+    return new Date().toTimeString().slice(0, 8);
 }

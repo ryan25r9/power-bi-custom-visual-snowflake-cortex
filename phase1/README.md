@@ -85,6 +85,12 @@ These were all hit live against a real tenant. They shape the design below; don'
   the question (or in a context cell value) would terminate the literal and break
   the SQL. Since 1.0.8.0 the visual neutralizes `$$` → `$ $` before applying the
   filter — a transport constraint, not sanitization.
+- **Power Query edits do NOTHING until Close & Apply.** A file saved with pending
+  edits (Desktop shows the yellow "Apply changes" banner) still runs the OLD
+  queries — and applying requires live connectivity, so a machine that can't
+  reach Snowflake can stage `.pbiviz` imports and page layout but never query
+  changes. This silently invalidated two test rounds (see the staging
+  revelation in the debugging section).
 - **Editing the `PromptBinding` query can silently sever the parameter binding.**
   Power Query edits that recreate the column (e.g. toggling zero rows ↔ one row)
   can drop Model view's "Bind to parameter" without any visible error — filters
@@ -109,7 +115,14 @@ These were all hit live against a real tenant. They shape the design below; don'
 
 ## Where debugging stands
 
-Last updated 2026-07-09, visual build **1.0.9.0**.
+Last updated 2026-07-10, visual build **1.0.10.0** (adds screenshot-grade
+diagnostics: every transcript line is wall-clock timestamped; each instance
+prints a `Cortex Chat v<version> — new instance` line at birth, so a repeat of
+that line mid-session is visible proof the host recreated the visual and wiped
+the transcript; the display instance logs every data arrival — row count,
+ANSWER_TEXT snippet, and the render decision (`rendering` / `same as last,
+skipped` / `dedupe reset`); and a display instance without an Answer-text
+binding shows a persistent ⚠ status).
 
 **ROUND 3 (1.0.8.0, live): THE MECHANISM WORKS.** With the echo probe in place,
 a question typed in the input instance rendered as `ECHO: <question>` in the
@@ -164,6 +177,20 @@ Query-reduction check.
 | 1.0.8.0 Round 3: native slicer on a one-row `PromptBinding` | **Works.** Slicer selection ran the agent end to end — binding healthy, suggested-questions fallback proven viable |
 | 1.0.9.0 Round 4: real agent query, question from the input instance | **No answer in ANY visual — including the canary table, which showed `STATUS = IDLE`.** Filter persisted (`ⓘ` echo shows it), so the last *completed* `CortexAnswerQuery` run saw the sentinel: the parameter didn't move (or no run ever completed). Confounds: the file was re-staged offline between rounds (a `PromptBinding` edit can silently sever the Model-view parameter binding — the prime suspect), question 1 was cleared mid-flight (clearing cancels the run), and question 2's verdict may have come inside its 2–4 min window (a mid-flight DirectQuery still displays the previous result — IDLE). Query History wasn't captured. Round 5 discriminates |
 | Round 5 (echo probe, re-staged file): reported no echo and an empty Query History | **Inconclusive — every observable in the round was unverifiable as run.** Snowsight's History UI scopes by role/user/warehouse/time and can hide the connection's queries entirely; a reused question is served from Power BI's cache (no SQL ever issued); whether the probe M was actually installed in the file she opened wasn't evidenced; and the Model-view binding check/rebind result went unrecorded. Round 6 makes every step self-evidencing before any conclusion is drawn |
+
+**2026-07-10 staging revelation — Rounds 4 and 5 reinterpreted.** The offline
+prep machine can PASTE Power Query edits but cannot **Apply** them (no
+Snowflake connectivity), so the Round 4/5 files went out with **pending,
+unapplied query edits** — the *applied* model still ran Round 3's end state
+(the real agent query, and possibly the one-row `PromptBinding`). Under that
+lens: Round 4's `IDLE` canary was the previous completed result (Q1 cancelled
+by the mid-flight clear, Q2 judged inside its 3-minute window), and Round 5's
+"no echo in 30s" was guaranteed — the applied query was the 3-minute agent,
+not the probe. **Both failures are fully consistent with a working mechanism;
+nothing observed since Round 3's echo success contradicts it.** The
+severed-binding theory demotes to a routine checkbox. Standing rule: ALL
+Power Query edits AND the Close & Apply happen on the analyst's machine; the
+offline machine only imports the visual and arranges the page.
 
 **Root cause of the Test B failure (fixed in 1.0.6.0):** the two
 `dataViewMappings` condition sets **overlapped** — with only the prompt field
@@ -301,28 +328,48 @@ echo probe in → one never-used question → echo within ~30s → real query �
 hands off 2–4+ min. Round 5 as run reported nothing anywhere, but produced no
 verifiable evidence either way — see the matrix.
 
-### Round 6 (operator-proof re-run — every step self-evidencing)
+### Round 7 (current protocol — analyst-run end to end)
 
-Round 6 removes execution trust as a variable. Same one-question-at-a-time
-rules as above; each numbered step ends in a screenshot.
+Supersedes Round 6 (never run). Per the staging revelation, ALL Power Query
+work — pasting definitions AND **Close & Apply** — happens on the analyst's
+machine; the offline prep machine only imports the `.pbiviz` and arranges the
+page. Same one-question-at-a-time rules as above; each numbered step ends in
+a screenshot. The v1.0.10.0 diagnostics make the screenshots self-evidencing:
+timestamped transcript lines, a `new instance` line proving build + instance
+lifetime (it reappearing means the host recreated the visual — expected after
+every Close & Apply), and per-data-arrival lines on the display instance
+showing row count, answer snippet, and the render decision.
 
-1. **Binding state (offline, before sending the file):** Model view →
-   `PromptBinding[Prompt]` → Properties → Advanced → **Bind to parameter**
-   shows `PromptParameter`. Screenshot it. Rebind first if empty — and record
-   that it WAS empty (that fact alone would explain Rounds 4–5).
-2. **Probe verification (in the opened file):** Power Query →
-   `CortexAnswerQuery` → Advanced Editor → confirm the `Sql` step is the
-   **timestamped echo probe** above. Screenshot. (If it's the agent
-   definition, the previous round's "wait ~30s for an echo" was actually a
-   3-minute agent run — a false negative by design.)
-3. **Echo with proof:** one never-used question in the input instance → Send →
-   within ~30s the display bubble reads `ECHO [<timestamp>]: <question>`. The
-   embedded Snowflake timestamp is the round-trip proof — no Query History
-   needed. Screenshot.
-4. **Liveness check:** a second never-used question → the timestamp must
+1. **Build check:** open the file; both chat visuals show
+   `ⓘ Cortex Chat v1.0.10.0 — new instance` in their transcripts. Ignore any
+   yellow "Apply changes" banner — step 2's own Apply supersedes it.
+2. **Install the probe (analyst machine):** Power Query → paste the zero-row
+   `PromptBinding` definition and the timestamped echo-probe
+   `CortexAnswerQuery` definition (both above) → **Close & Apply**. Edits do
+   nothing until applied — this un-applied gap is what invalidated Rounds
+   4–5. Transcripts reset after Apply (fresh `new instance` lines): expected.
+3. **Binding state:** Model view → `PromptBinding[Prompt]` → Properties →
+   Advanced → **Bind to parameter** shows `PromptParameter`. Screenshot.
+   Rebind + report if blank. (Re-check after any Apply that touched
+   `PromptBinding`.)
+4. **Echo with proof:** one never-used question in the input instance → Send →
+   within ~30s the display bubble reads `ECHO [<timestamp>]: <question>` and
+   its transcript logs `data: 1 row(s) … → rendering`. The embedded Snowflake
+   timestamp is the round-trip proof — no Query History needed. Screenshot
+   both visuals.
+5. **Liveness check:** a second never-used question → the timestamp must
    CHANGE. Unchanged timestamp = no new query ran (reused question served
    from Power BI's cache, or the parameter is stuck).
-5. **Only if no echo:** search history for **the question text itself** — the
+6. **Full pipeline:** paste the real `CortexAnswerQuery` definition (Build it →
+   step 2 → Step 3) → **Close & Apply** → ONE never-used question → hands off
+   for 2–4+ minutes → answer in the display bubble + canary table. Agent-side
+   observability shows the `DATA_AGENT_RUN` for this phase (note: echo tests
+   never call the agent, so they won't appear there — the bubble timestamp is
+   their evidence).
+7. **Empty-box Send before saving** (see Gotchas).
+
+**Optional forensics (only if step 4 shows no echo):** search history for **the
+question text itself** — the
    protocol's never-used questions make it a globally unique marker, immune to
    the noise of every other user running this agent (do NOT filter on
    `DATA_AGENT_RUN`; that matches everyone's traffic and floods the row
@@ -344,12 +391,8 @@ rules as above; each numbered step ends in a screenshot.
    user, fall back to the Query History **page** with its "SQL text" filter
    set to the same fragment. Rows present = queries ran and the earlier
    "empty History" was a visibility artifact; verified-zero rows with the
-   probe and binding both evidenced (steps 1–2) = the parameter is not
+   probe and binding both evidenced (steps 2–3) = the parameter is not
    moving — new information worth a fresh-pbix rebuild of the binding.
-6. **Full pipeline:** echo + changing timestamps proven → paste the real
-   definition (Build it → step 2 → Step 3) → ONE never-used question → hands
-   off for 2–4+ minutes → answer in the display bubble + canary table.
-7. **Empty-box Send before saving** (see Gotchas).
 
 **Also since 1.0.5.0:** the prompt ends with a plain-text formatting
 instruction, because the agent returned a markdown table and the visual
