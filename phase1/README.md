@@ -178,6 +178,8 @@ Query-reduction check.
 | 1.0.9.0 Round 4: real agent query, question from the input instance | **No answer in ANY visual — including the canary table, which showed `STATUS = IDLE`.** Filter persisted (`ⓘ` echo shows it), so the last *completed* `CortexAnswerQuery` run saw the sentinel: the parameter didn't move (or no run ever completed). Confounds: the file was re-staged offline between rounds (a `PromptBinding` edit can silently sever the Model-view parameter binding — the prime suspect), question 1 was cleared mid-flight (clearing cancels the run), and question 2's verdict may have come inside its 2–4 min window (a mid-flight DirectQuery still displays the previous result — IDLE). Query History wasn't captured. Round 5 discriminates |
 | Round 5 (echo probe, re-staged file): reported no echo and an empty Query History | **Inconclusive — every observable in the round was unverifiable as run.** Snowsight's History UI scopes by role/user/warehouse/time and can hide the connection's queries entirely; a reused question is served from Power BI's cache (no SQL ever issued); whether the probe M was actually installed in the file she opened wasn't evidenced; and the Model-view binding check/rebind result went unrecorded. Round 6 makes every step self-evidencing before any conclusion is drawn |
 
+| Round 7 first attempt (new analyst), Close & Apply after pasting Blocks 1–2 | **Blocked client-side:** "3 queries are blocked … CortexAnswerQuery: Unable to cast … InvocationExpressionSyntaxNode2 … to ILetExpression. Query Parameters." Parser-level M-document-shape error in the parameter-binding engine, NOT Snowflake permissions (no connection attempted) — see the Gotcha. Re-canonicalization addendum issued; the same blocks applied cleanly in Round 3 |
+
 **2026-07-10 staging revelation — Rounds 4 and 5 reinterpreted.** The offline
 prep machine can PASTE Power Query edits but cannot **Apply** them (no
 Snowflake connectivity), so the Round 4/5 files went out with **pending,
@@ -631,6 +633,19 @@ transcript also echoes what the host actually persisted (`ⓘ` lines).
 - **Query reduction options** (File → Options → Query reduction): keep everything
   off. "Apply" buttons defer slicer/filter changes and can hold the visual's
   applied filter the same way.
+- **"Unable to cast … to ILetExpression" at Close & Apply** (tail: "Query
+  Parameters", banner: "N queries are blocked"): a **client-side M parse error
+  from the parameter-binding engine — NOT a Snowflake/permissions error** (no
+  connection is attempted). It means one of the documents in the
+  parameter chain (`PromptParameter` → `PromptBinding` → `CortexAnswerQuery`)
+  is no longer the canonical shape: ordinary queries must be top-level
+  `let … in …`, and the parameter must stay the single-expression
+  `"__no_prompt__" meta [IsParameterQuery=true, …]` form — never let-wrapped.
+  Typical cause: a paste into the wrong query (`PromptParameter` vs
+  `PromptBinding` are easy to confuse) or a partial paste. Fix: screenshot all
+  three documents (forensics first), re-paste all three canonical definitions,
+  re-verify Bind to parameter, Close & Apply. The error blames the query being
+  rewritten (`CortexAnswerQuery`), not necessarily the malformed document.
 - **Context fields + Answer text share one table query.** `CortexAnswerQuery` is
   its own disconnected island; binding fact-table columns alongside `ANSWER_TEXT`
   can hit "can't determine relationships between the fields". If that bites once
