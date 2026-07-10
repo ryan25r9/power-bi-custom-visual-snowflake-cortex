@@ -85,6 +85,16 @@ These were all hit live against a real tenant. They shape the design below; don'
   the question (or in a context cell value) would terminate the literal and break
   the SQL. Since 1.0.8.0 the visual neutralizes `$$` → `$ $` before applying the
   filter — a transport constraint, not sanitization.
+- **Editing the `PromptBinding` query can silently sever the parameter binding.**
+  Power Query edits that recreate the column (e.g. toggling zero rows ↔ one row)
+  can drop Model view's "Bind to parameter" without any visible error — filters
+  then persist but the parameter never moves (canary stuck at `IDLE`). Re-verify
+  the binding after ANY edit to `PromptBinding`.
+- **Changing the filter context mid-run cancels the DirectQuery.** An empty-box
+  clear or a second question while an agent run is in flight kills that run; and
+  a mid-flight visual still displays its PREVIOUS completed result, so a canary
+  showing `IDLE` seconds after a Send just means "still running". One question at
+  a time; verdicts come from Snowflake Query History, not from what's on screen.
 - **Stale filters are silent test-killers.** `applyJsonFilter(..., merge)` persists
   into the .pbix and nothing ever removed it, so an old question can linger on a
   visual (at either scope) and conflict with the new value — the parameter then can't
@@ -152,6 +162,7 @@ Query-reduction check.
 | 1.0.8.0 Round 3: input instance + echo probe | **WORKS.** `ECHO: <question>` rendered in the display instance seconds after Send — the visual's filter drives the parameter |
 | 1.0.8.0 Round 3: real agent query swapped back (Close & Apply), questions asked | **Agent ran, chat stayed silent.** The answer rendered in a native debug table bound to `CortexAnswerQuery` but never in the chat visual — render-side bug, fixed in 1.0.9.0 (see above) |
 | 1.0.8.0 Round 3: native slicer on a one-row `PromptBinding` | **Works.** Slicer selection ran the agent end to end — binding healthy, suggested-questions fallback proven viable |
+| 1.0.9.0 Round 4: real agent query, question from the input instance | **No answer in ANY visual — including the canary table, which showed `STATUS = IDLE`.** Filter persisted (`ⓘ` echo shows it), so the last *completed* `CortexAnswerQuery` run saw the sentinel: the parameter didn't move (or no run ever completed). Confounds: the file was re-staged offline between rounds (a `PromptBinding` edit can silently sever the Model-view parameter binding — the prime suspect), question 1 was cleared mid-flight (clearing cancels the run), and question 2's verdict may have come inside its 2–4 min window (a mid-flight DirectQuery still displays the previous result — IDLE). Query History wasn't captured. Round 5 discriminates |
 
 **Root cause of the Test B failure (fixed in 1.0.6.0):** the two
 `dataViewMappings` condition sets **overlapped** — with only the prompt field
@@ -258,30 +269,35 @@ question>` within seconds, and Query History shows the trivial `SELECT`. Every
 send is near-free, so you can iterate on the visual side rapidly and only run
 the real agent once the echo works.
 
-### Round 4 confirmation (1.0.9.0 — expected to be the last)
+### Round 5 (re-verify after the Round 4 failure)
 
-Round 3 proved the mechanism (see the matrix); this round only confirms the
-1.0.9.0 render fix against a real agent run.
+Round 4 failed with the canary at `STATUS = IDLE` (see the matrix). The visual's
+apply path is byte-identical to the build that passed Round 3, so the suspects
+are file-state and procedure, in this order:
 
-Prep (offline-safe): import `dist/...1.0.9.0.pbiviz` (replaces the old build —
-same GUID, bindings survive); `CortexAnswerQuery` holds the REAL agent
-definition (Build it → step 2 → Step 3); `PromptBinding` back to zero rows
-(`{}`); any control slicer deleted; `PromptParameter` Current Value
-`__no_prompt__`; the two instances bound as in §3 (Context fields still empty
-until this passes). Keep a native table on `CortexAnswerQuery`'s three columns
-on the page — it's the canary that separates "agent/model problem" from
-"visual render problem".
+1. **Severed parameter binding (prime suspect, offline-checkable).** Model view →
+   select `PromptBinding[Prompt]` → Properties → Advanced → **Bind to
+   parameter** must show `PromptParameter`. Editing the `PromptBinding` query
+   (zero rows ↔ one row) can recreate the column and silently drop this
+   binding. Re-bind if empty. Verify after ANY Power Query edit to
+   `PromptBinding`, every time.
+2. **Mid-flight cancel.** An empty-box Send (clear) or a second question while
+   an agent run is in flight changes the filter context and CANCELS the
+   DirectQuery. Round 4's question 1 was cleared mid-flight. Rule: one
+   question, then hands off the visual until the answer lands or 5 minutes
+   pass.
+3. **Premature verdict.** A mid-flight DirectQuery visual still displays its
+   PREVIOUS completed result — the canary showing `IDLE` right after a Send is
+   what "still running" looks like. Ground truth is Snowflake **Query
+   History**, which Round 4 didn't capture.
 
-Test (needs Snowflake): one never-used question in the input instance → Send →
-allow 2–4 minutes → the answer appears in the display instance's bubble. If
-the canary table fills but the bubble doesn't: first check the display visual
-for a host error icon/overlay (a visual-level query error can't be rendered
-through), then capture a screenshot of both visuals plus the *input*
-instance's `ⓘ` lines (the display instance doesn't print them — it never
-sends). If NOTHING fills, fall back to the echo probe above and the Round 3
-discrimination steps (Query History → Performance Analyzer `DEFINE MPARAMETER`
-→ native-slicer binding control with a one-row `PromptBinding`). When done,
-**clear with an empty-box Send before saving** (see Gotchas).
+Protocol: verify/fix the binding (offline) → echo probe in (instant ground
+truth) → one never-used question → echo in display + canary within ~30s →
+swap the real query in → one never-used question → hands off, wait the full
+2–4+ min → answer in display + canary. Query History checked at each failure
+point; also pull History for the Round 4 timestamps — whether those
+`DATA_AGENT_RUN`s ever fired/completed retroactively settles what Round 4 was.
+When done, **clear with an empty-box Send before saving** (see Gotchas).
 
 **Also since 1.0.5.0:** the prompt ends with a plain-text formatting
 instruction, because the agent returned a markdown table and the visual
