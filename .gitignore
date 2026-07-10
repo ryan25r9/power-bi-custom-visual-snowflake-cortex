@@ -1,6 +1,9 @@
 # OS
 .DS_Store
 
+# Local working files (scoping decks etc.) — not part of the deliverable
+decks/
+
 # Dependencies
 node_modules/
 
