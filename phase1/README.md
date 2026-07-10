@@ -322,23 +322,30 @@ rules as above; each numbered step ends in a screenshot.
 4. **Liveness check:** a second never-used question → the timestamp must
    CHANGE. Unchanged timestamp = no new query ran (reused question served
    from Power BI's cache, or the parameter is stuck).
-5. **Only if no echo:** run this in a Snowsight worksheet (own-user scope —
-   immune to the History UI's role/user/time/warehouse filters, since Desktop
-   signs in as the same user) and screenshot the output:
+5. **Only if no echo:** search history for **the question text itself** — the
+   protocol's never-used questions make it a globally unique marker, immune to
+   the noise of every other user running this agent (do NOT filter on
+   `DATA_AGENT_RUN`; that matches everyone's traffic and floods the row
+   limit). In a Snowsight worksheet, with `<QUESTION_FRAGMENT>` replaced by a
+   distinctive 4–6 word chunk of the exact question typed:
 
    ```sql
-   SELECT start_time, execution_status, total_elapsed_time/1000 AS secs,
-          LEFT(query_text, 140) AS query_snippet
-   FROM TABLE(DBS_ANALYTICS_AI.INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER(RESULT_LIMIT => 1000))
-   WHERE (query_text ILIKE '%ECHO%' OR query_text ILIKE '%DATA_AGENT_RUN%')
-     AND start_time > DATEADD('hour', -8, CURRENT_TIMESTAMP())
+   SELECT start_time, user_name, execution_status,
+          total_elapsed_time/1000 AS secs, LEFT(query_text, 200) AS query_snippet
+   FROM TABLE(DBS_ANALYTICS_AI.INFORMATION_SCHEMA.QUERY_HISTORY(
+         END_TIME_RANGE_START => DATEADD('hour', -4, CURRENT_TIMESTAMP()),
+         RESULT_LIMIT => 10000))
+   WHERE query_text ILIKE '%<QUESTION_FRAGMENT>%'
    ORDER BY start_time DESC;
    ```
 
-   Rows present = queries ran and the earlier "empty History" was a UI-filter
-   artifact; genuinely zero rows with a verified probe and binding = the
-   parameter is not moving, which with steps 1–2 evidenced would be new
-   information worth a fresh-pbix rebuild of the binding.
+   Caveat: table functions only show queries the current user/role may view —
+   if the report's connection signs in as a different (e.g. shared service)
+   user, fall back to the Query History **page** with its "SQL text" filter
+   set to the same fragment. Rows present = queries ran and the earlier
+   "empty History" was a visibility artifact; verified-zero rows with the
+   probe and binding both evidenced (steps 1–2) = the parameter is not
+   moving — new information worth a fresh-pbix rebuild of the binding.
 6. **Full pipeline:** echo + changing timestamps proven → paste the real
    definition (Build it → step 2 → Step 3) → ONE never-used question → hands
    off for 2–4+ minutes → answer in the display bubble + canary table.
