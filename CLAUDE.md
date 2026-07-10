@@ -20,6 +20,10 @@ owned by a second developer; it has its own build/gate and does not share code w
   MSU's SPARTAN_TRENDS_CA). `deploy.sh` — Azure provisioning (MSU values prefilled).
 - `tools/` — mock Snowflake SSE server + proxy E2E. `tests/` — 28 unit tests. `PLAN.md` — verification log.
 - `SETUP.md` — handoff runbook for deploying the whole thing; keep it in sync with config changes.
+- `PHASE2-HANDOFF.md` — the code-complete→live project plan + full testing outline (START HERE for
+  any Phase 2 go-live work; flags the privatelink networking prerequisite). `phase1/HANDOFF.md` —
+  the complete post-Round-10 playbook for Phase 1 (outcome decision tree, M block library, polish
+  spec). Both written 2026-07-10 for takeover by a future model; keep them updated with results.
 - `phase1/` — separate Phase 2-throwaway demo (own `visual/`, README, gate; no Snowflake objects —
   the agent runs inline in the model's M query). STATE 2026-07-10: a filter-pane card resolves the
   Dynamic M parameter in seconds (proven, timestamped) while the visual's Basic-In filter on the

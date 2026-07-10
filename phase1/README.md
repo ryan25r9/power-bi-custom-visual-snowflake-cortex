@@ -123,6 +123,11 @@ These were all hit live against a real tenant. They shape the design below; don'
 - Verify the round-trip **in the Power BI Service**, not just Desktop — the
   dynamic-data-source refresh restriction only bites in the Service.
 
+> **Taking this project over?** Read [HANDOFF.md](HANDOFF.md) first — it is
+> the complete playbook (what's proven/disproven, the Round 10 outcome
+> decision tree, canonical M blocks, the polish-build spec, and testing
+> discipline). This section below is the forensic history.
+
 ## Where debugging stands
 
 Last updated 2026-07-10, visual build **1.0.12.0** — the shape/membership
