@@ -115,7 +115,11 @@ These were all hit live against a real tenant. They shape the design below; don'
 
 ## Where debugging stands
 
-Last updated 2026-07-10, visual build **1.0.10.0** (adds screenshot-grade
+Last updated 2026-07-10, visual build **1.0.11.0** (fixes the sticky
+no-answer-field warning that latched onto input instances, clears the warning
+live when the field gets bound, disambiguates the data-line text — "empty
+(IDLE/blank row)" vs "empty (no Answer text field bound)" — and points the
+input's sent-message at the canary too). 1.0.10.0 added the screenshot-grade
 diagnostics: every transcript line is wall-clock timestamped; each instance
 prints a `Cortex Chat v<version> — new instance` line at birth, so a repeat of
 that line mid-session is visible proof the host recreated the visual and wiped
@@ -179,6 +183,8 @@ Query-reduction check.
 | Round 5 (echo probe, re-staged file): reported no echo and an empty Query History | **Inconclusive — every observable in the round was unverifiable as run.** Snowsight's History UI scopes by role/user/warehouse/time and can hide the connection's queries entirely; a reused question is served from Power BI's cache (no SQL ever issued); whether the probe M was actually installed in the file she opened wasn't evidenced; and the Model-view binding check/rebind result went unrecorded. Round 6 makes every step self-evidencing before any conclusion is drawn |
 
 | Round 7 first attempt (new analyst), Close & Apply after pasting Blocks 1–2 | **Blocked client-side:** "3 queries are blocked … CortexAnswerQuery: Unable to cast … InvocationExpressionSyntaxNode2 … to ILetExpression. Query Parameters." Parser-level M-document-shape error in the parameter-binding engine, NOT Snowflake permissions (no connection attempted) — see the Gotcha. Re-canonicalization addendum issued; the same blocks applied cleanly in Round 3 |
+
+| 1.0.10.0 Round 7 (as-run with the pre-decision-tree script): no echo in the display (steps 4–5); step 6 nothing in visuals, canary, or agent observability | **The new diagnostics caught two config faults in the screenshots.** (1) The DISPLAY chat had NO Answer text bound — its own ⚠ warning says so and its `data:` lines read `0 row(s)` throughout — so it could never render anything; the canary wasn't observed during the echo steps. (2) The step-3 binding-check result went unreported, and the script's `PromptBinding` re-paste + Apply is exactly the operation that severs the binding. Meanwhile **filter propagation visibly worked**: the display logged a data update at the exact second of every send (13:22:48 / 13:25:34 / 13:28:50). Filter→other-visuals is proven live; filter→parameter remains the open link, severed binding the leading suspect. Round 8 responds: display binding verified, `PromptBinding` never re-pasted, canary = primary observable, binding screenshot mandatory |
 
 **2026-07-10 staging revelation — Rounds 4 and 5 reinterpreted.** The offline
 prep machine can PASTE Power Query edits but cannot **Apply** them (no
@@ -330,38 +336,42 @@ echo probe in → one never-used question → echo within ~30s → real query �
 hands off 2–4+ min. Round 5 as run reported nothing anywhere, but produced no
 verifiable evidence either way — see the matrix.
 
-### Round 7 (current protocol — analyst-run end to end)
+### Round 8 (current protocol — analyst-run end to end)
 
-Supersedes Round 6 (never run). Per the staging revelation, ALL Power Query
-work — pasting definitions AND **Close & Apply** — happens on the analyst's
-machine; the offline prep machine only imports the `.pbiviz` and arranges the
-page. Same one-question-at-a-time rules as above; each numbered step ends in
-a screenshot. **Protocol principle: every Ryan↔analyst exchange is expensive,
-so the script is a decision tree — each failure point has an in-session
-fallback or control experiment, and a session never ends at its first
-failure.** The v1.0.10.0 diagnostics make the screenshots self-evidencing:
-timestamped transcript lines, a `new instance` line proving build + instance
-lifetime (it reappearing means the host recreated the visual — expected after
-every Close & Apply), and per-data-arrival lines on the display instance
-showing row count, answer snippet, and the render decision.
+Round 7 as-run (see matrix) surfaced two configuration faults, so Round 8
+differs in three ways: the display instance's **Answer text binding is now an
+explicit verified step** (Round 7's display had nothing bound — the ⚠ warning
+caught it); **`PromptBinding` is NOT re-pasted** (it's already applied;
+re-creating that table is exactly the operation that severs the parameter
+binding); and the **canary table is the primary echo observable** (a chat
+misconfiguration can't hide the result). Ground rules unchanged: ALL Power
+Query work — pasting definitions AND **Close & Apply** — happens on the
+analyst's machine; one question at a time; each numbered step ends in a
+screenshot; every failure point has an in-session fallback — a session never
+ends at its first failure.
 
 1. **Build check:** open the file; both chat visuals show
-   `ⓘ Cortex Chat v1.0.10.0 — new instance` in their transcripts. Ignore any
+   `ⓘ Cortex Chat v1.0.11.0 — new instance` in their transcripts. Ignore any
    yellow "Apply changes" banner — step 2's own Apply supersedes it.
-2. **Install the probe (analyst machine):** Power Query → paste the zero-row
-   `PromptBinding` definition and the timestamped echo-probe
-   `CortexAnswerQuery` definition (both above) → **Close & Apply**. Edits do
-   nothing until applied — this un-applied gap is what invalidated Rounds
-   4–5. Transcripts reset after Apply (fresh `new instance` lines): expected.
-3. **Binding state:** Model view → `PromptBinding[Prompt]` → Properties →
-   Advanced → **Bind to parameter** shows `PromptParameter`. Screenshot.
-   Rebind + report if blank. (Re-check after any Apply that touched
-   `PromptBinding`.)
-4. **Echo with proof:** one never-used question in the input instance → Send →
-   within ~30s the display bubble reads `ECHO [<timestamp>]: <question>` and
-   its transcript logs `data: 1 row(s) … → rendering`. The embedded Snowflake
-   timestamp is the round-trip proof — no Query History needed. Screenshot
-   both visuals.
+2. **Install the probe ONLY:** Power Query → paste the timestamped echo-probe
+   `CortexAnswerQuery` definition (above) → **Close & Apply**. Do NOT touch
+   `PromptBinding`. Transcripts reset after Apply (fresh `new instance`
+   lines): expected.
+3. **Binding state (the Round 7 unknown — mandatory):** Model view →
+   `PromptBinding[Prompt]` → Properties → Advanced → **Bind to parameter**
+   shows `PromptParameter`. Screenshot. Rebind + report if blank.
+4. **Display binding:** select the display chat instance → drag
+   `CortexAnswerQuery[ANSWER_TEXT]` into **Answer text**. Its ⚠ "No 'Answer
+   text' field bound" status line must disappear (v1.0.11.0 clears it live).
+   Confirm a canary table with `CortexAnswerQuery`'s three columns is on the
+   page; add one if missing. Screenshot.
+5. **Echo with proof:** one never-used question in the input instance → Send →
+   within ~30s the **canary table's** `ANSWER_TEXT` reads
+   `ECHO [<timestamp>]: <question>` — that is the primary pass signal — and
+   the display bubble shows the same (its transcript logs
+   `data: 1 row(s) … → rendering`). The embedded Snowflake timestamp is the
+   round-trip proof — no Query History needed. Screenshot canary + both
+   visuals.
    **If no echo after ~2 minutes, run the in-session fallback ladder instead
    of stopping:**
    - *(a)* screenshot both transcripts (the display's data-arrival lines show
@@ -375,14 +385,15 @@ showing row count, answer snippet, and the render decision.
    - *(c)* if the pane control ALSO failed → **native-slicer control**: swap
      `PromptBinding` to the one-row definition
      (`{{"CONTROL QUESTION 123"}}`), Close & Apply, native slicer on the
-     column, click the value, watch for the echo; then revert to zero rows.
-     Slicer fails too = the parameter binding is broken despite step 3 —
-     screenshot the binding pane again.
-5. **Liveness check** (only if some echo path worked): a second never-used
+     column, click the value, watch the canary for the echo; then revert to
+     zero rows, Close & Apply, and **re-run the step-3 binding check** (these
+     edits are exactly what severs the binding). Slicer fails too = the
+     parameter binding is broken — screenshot the binding pane again.
+6. **Liveness check** (only if some echo path worked): a second never-used
    question → the timestamp must CHANGE. Unchanged = no new query ran
    (reused question served from Power BI's cache, or the parameter is
    stuck) — try a third unique question before concluding.
-6. **Full pipeline:** paste the real `CortexAnswerQuery` definition (Build it →
+7. **Full pipeline:** paste the real `CortexAnswerQuery` definition (Build it →
    step 2 → Step 3) → **Close & Apply** → ONE never-used question → hands off
    for 2–4+ minutes → answer in the display bubble + canary table. Agent-side
    observability shows the `DATA_AGENT_RUN` for this phase (note: echo tests
@@ -391,7 +402,7 @@ showing row count, answer snippet, and the render decision.
    transcript (its data-arrival lines say what the visual decided). Neither
    fills after 5 min → ask once more with a fresh question, wait again,
    screenshot regardless.
-7. **Empty-box Send before saving** (see Gotchas).
+8. **Empty-box Send before saving** (see Gotchas).
 
 **Optional forensics (only if step 4 shows no echo):** search history for **the
 question text itself** — the

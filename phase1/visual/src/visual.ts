@@ -42,7 +42,7 @@ const DEFAULT_ANSWER_TIMEOUT_SECS = 600;
 // build ran and when each instance was (re)created — Desktop recreates visuals
 // on every Close & Apply, wiping the transcript, and that wipe itself is
 // diagnostic. KEEP IN SYNC with pbiviz.json "version".
-const VISUAL_VERSION = "1.0.10.0";
+const VISUAL_VERSION = "1.0.11.0";
 
 export class Visual implements IVisual {
     private host: IVisualHost;
@@ -88,14 +88,18 @@ export class Visual implements IVisual {
             if (this.inputMode) {
                 this.contextChip.textContent = "input mode";
                 this.contextChip.title = "This instance only sends questions. Answers appear in the display instance (the one with Answer text bound).";
+                // Clear any status latched before input-mode detection kicked in —
+                // status lines persist, and live Round 7 screenshots showed the
+                // no-answer-field warning stuck on an input instance.
+                if (!this.busy) this.setStatus("");
             } else {
                 this.refreshContextChip();
                 // A display instance without the answer column can never show an
-                // answer — make that misconfiguration visible in screenshots.
-                const hasAnswerRole = this.dataViews.some(dv =>
-                    !!dv?.metadata?.columns?.some(c => !!c.roles?.["answerText"]));
-                if (!hasAnswerRole && !this.busy) {
-                    this.setStatus("⚠ No 'Answer text' field bound — answers cannot display in this instance.");
+                // answer — make that misconfiguration visible in screenshots, and
+                // clear it the moment the field is bound.
+                if (!this.busy) {
+                    this.setStatus(this.hasAnswerRole() ? ""
+                        : "⚠ No 'Answer text' field bound — answers cannot display in this instance.");
                 }
             }
 
@@ -131,7 +135,7 @@ export class Visual implements IVisual {
                 // screenshots reconstruct a whole test round.
                 const snippet = answer
                     ? `"${answer.slice(0, 60)}${answer.length > 60 ? "…" : ""}"`
-                    : "empty (IDLE row or no answer column)";
+                    : (this.hasAnswerRole() ? "empty (IDLE/blank row)" : "empty (no Answer text field bound)");
                 if (answer && answer !== this.lastAnswer) {
                     this.addActivity(`ⓘ data: ${rows} row(s), ANSWER_TEXT ${snippet} → rendering`);
                     this.lastAnswer = answer;
@@ -213,7 +217,7 @@ export class Visual implements IVisual {
         // Input-only instance: it never receives the answer (that lands in the display
         // instance's dataView), so acknowledge and reset instead of spinning.
         if (this.inputMode) {
-            this.addActivity("Question sent — the answer appears in the chat display instance.");
+            this.addActivity("Question sent — watch the display instance AND any table showing CortexAnswerQuery.");
             this.busy = false;
             this.sendBtn.disabled = false;
             return;
@@ -357,6 +361,10 @@ export class Visual implements IVisual {
             ? `context: ${summary.fieldCount} fields · ${summary.rowCount} rows`
             : "no context fields bound";
         this.contextChip.title = "What the agent can currently see. Bind fields to 'Context fields' to expand it.";
+    }
+
+    private hasAnswerRole(): boolean {
+        return this.dataViews.some(dv => !!dv?.metadata?.columns?.some(c => !!c.roles?.["answerText"]));
     }
 
     private setStatus(msg: string): void { this.statusEl.textContent = msg; }
