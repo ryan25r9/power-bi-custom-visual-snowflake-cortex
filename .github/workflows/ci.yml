@@ -1,10 +1,10 @@
 name: CI
 
-# Runs the build gates on every PR and feature-branch push so neither developer
-# merges a broken build. main is PR-only by convention (not server-enforced on
+# Runs the build gates on every PR and feature-branch push so a broken build
+# never merges unnoticed. main is PR-only by convention (not server-enforced on
 # the free plan), so these checks are advisory-but-visible: glance at them before
-# merging. If the repo ever moves to GitHub Pro, mark "phase2-gates" and
-# "phase1-gates" as required checks and they enforce automatically.
+# merging. If the repo ever moves to GitHub Pro, mark "gates" as a required check
+# and it enforces automatically.
 
 on:
   pull_request:
@@ -19,40 +19,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Detect which area changed so each gate can no-op cleanly while still reporting
-  # a status (keeps things tidy and ready to be "required" later).
+  # Detect whether code paths changed so docs-only PRs skip the build cheaply
+  # while still reporting a green status (ready to be "required" later).
   changes:
     runs-on: ubuntu-latest
     outputs:
-      phase2: ${{ steps.filter.outputs.phase2 }}
-      phase1: ${{ steps.filter.outputs.phase1 }}
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
-            phase2:
+            code:
               - 'visual/**'
               - 'proxy/**'
               - 'snowflake/**'
               - 'tests/**'
               - 'tools/**'
               - '.github/workflows/ci.yml'
-            phase1:
-              - 'phase1/**'
 
-  # Phase 2 (repo root): the three gates from CLAUDE.md.
-  phase2-gates:
+  # The three gates from CLAUDE.md.
+  gates:
     needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Skip if no Phase 2 changes
-        if: needs.changes.outputs.phase2 != 'true'
-        run: echo "No Phase 2 paths changed — gate passes trivially."
+      - name: Skip if no code changes
+        if: needs.changes.outputs.code != 'true'
+        run: echo "No code paths changed — gate passes trivially."
       - uses: actions/setup-node@v4
-        if: needs.changes.outputs.phase2 == 'true'
+        if: needs.changes.outputs.code == 'true'
         with:
           node-version: '20'
           cache: 'npm'
@@ -62,49 +59,22 @@ jobs:
       # proxy deps first — tests/run-tests.sh AND tools/run-e2e.sh both compile
       # with proxy/node_modules/.bin/tsc.
       - name: Install proxy deps
-        if: needs.changes.outputs.phase2 == 'true'
+        if: needs.changes.outputs.code == 'true'
         working-directory: proxy
         run: npm ci
       - name: Install visual deps
-        if: needs.changes.outputs.phase2 == 'true'
+        if: needs.changes.outputs.code == 'true'
         working-directory: visual
         run: npm ci
       - name: Gate 1 — unit tests
-        if: needs.changes.outputs.phase2 == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: bash tests/run-tests.sh
       - name: Gate 2 — mock-Snowflake to proxy E2E
-        if: needs.changes.outputs.phase2 == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: bash tools/run-e2e.sh
       # pbiviz package is headless — it never needs the dev certificate that
       # `pbiviz start` does.
       - name: Gate 3 — pbiviz package
-        if: needs.changes.outputs.phase2 == 'true'
+        if: needs.changes.outputs.code == 'true'
         working-directory: visual
-        run: ./node_modules/.bin/pbiviz package
-
-  # Phase 1 (phase1/): contextBuilder unit test + pbiviz package.
-  phase1-gates:
-    needs: changes
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Skip if no Phase 1 changes
-        if: needs.changes.outputs.phase1 != 'true'
-        run: echo "No Phase 1 paths changed — gate passes trivially."
-      - uses: actions/setup-node@v4
-        if: needs.changes.outputs.phase1 == 'true'
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: phase1/visual/package-lock.json
-      - name: Install Phase 1 visual deps
-        if: needs.changes.outputs.phase1 == 'true'
-        working-directory: phase1/visual
-        run: npm ci
-      - name: Unit tests (contextBuilder)
-        if: needs.changes.outputs.phase1 == 'true'
-        run: bash phase1/visual/tests/run-tests.sh
-      - name: pbiviz package
-        if: needs.changes.outputs.phase1 == 'true'
-        working-directory: phase1/visual
         run: ./node_modules/.bin/pbiviz package

@@ -1,6 +1,0 @@
-{
-    "name": "cortex-chat-mquery-visual-tests",
-    "private": true,
-    "type": "module",
-    "description": "Marks tests/ (including tests/build/ compiler output) as ESM so Node runs the es2022 .js output natively."
-}

@@ -1,35 +1,38 @@
 # Snowflake Cortex Chat for Power BI
 
 A chat window that lives inside a Power BI report and talks to a Snowflake Cortex
-agent. Every question automatically includes what the user is currently looking
+Agent. Every question automatically includes what the user is currently looking
 at: the fields bound to the visual, filtered by whatever slicers and filters are
-active on the page.
+active on the page. The agent orchestrates Cortex Analyst (SQL over structured
+data) and Cortex Search (semantic search over documents) and streams the answer
+back — text, tool activity, auditable SQL, charts, and tables — into the report.
 
 ```
-┌─ Power BI report ────────────┐      ┌─ Azure Function ─┐      ┌─ Snowflake ────────────┐
-│  ┌─ Cortex Chat visual ───┐  │ SSE  │  agentProxy      │ SSE  │  agent:run             │
-│  │ chat UI                │◄─┼──────┤  - CORS          │◄─────┤  Cortex agent          │
-│  │ + filtered DataView ───┼──┼─────►│  - holds PAT     ├─────►│  - text-to-SQL tool    │
-│  └────────────────────────┘  │ POST │  - relays stream │      │  - semantic view       │
-└──────────────────────────────┘      └──────────────────┘      └────────────────────────┘
+┌─ Power BI report ────────────┐      ┌─ Middleware (Azure Fn) ─┐      ┌─ Snowflake ─────────────────┐
+│  ┌─ Cortex Chat visual ───┐  │      │  authentication         │      │  Cortex Agent (agent:run)   │
+│  │ chat UI                │◄─┼──────┤  request validation     │◄─────┤   ├─ Cortex Analyst (SQL)   │
+│  │ + filtered DataView ───┼──┼─────►│  SSE relay              ├─────►│   └─ Cortex Search (docs)   │
+│  └────────────────────────┘  │ SSE  │  credential custody     │ SSE  │  data + semantic layer, RLS │
+└──────────────────────────────┘      └─────────────────────────┘      └─────────────────────────────┘
 ```
 
-**Setting it up?** Follow [SETUP.md](SETUP.md). It's a step-by-step runbook and
-assumes no familiarity with this codebase.
+- **Deploying it?** [SETUP.md](SETUP.md) is the step-by-step runbook.
+- **Understanding or extending it?** [ARCHITECTURE.md](ARCHITECTURE.md) covers the
+  layers, the two middleware deployment models (bundled proxy vs. MSU's internal
+  AI platform), authentication, session management, CORS, streaming, and the
+  networking prerequisite. **Read it before any deployment work.**
 
-## Repository phases
+## Project history, briefly
 
-The repo holds the same product at three stages. **This README and everything at the
-repo root describe Phase 2.**
-
-| Phase | What | Where |
-|---|---|---|
-| **Phase 1** | Quick demo with **no proxy and no Snowflake objects** — the question round-trips through a Dynamic M parameter into a native query that runs the agent inline; the answer comes back as data. No streaming, no memory. Throwaway once Phase 2 ships. | [`phase1/`](phase1/README.md) |
-| **Phase 2** | This repo. Azure Function proxy + Service Principal, streaming answers, multi-turn chat. | repo root |
-| **Phase 3** | Per-user Entra passthrough (`AADAuthentication` + External OAuth). Requires AppSource publication. Not built yet; continues from Phase 2. | — |
-
-Phases 1 and 2 are developed in parallel by different people — see [CONTRIBUTING.md](CONTRIBUTING.md)
-for the branch/PR workflow.
+An earlier "Phase 1" tried to do this with **no middleware at all** — the question
+traveled through a Dynamic M query parameter into an inline `DATA_AGENT_RUN` SQL
+call. It failed on a Power BI platform limitation (custom visuals can't drive
+Dynamic M parameters — the host rewrites their filters) and was abandoned on
+2026-07-16. The two-paragraph version, and the constraint worth remembering, are
+in [docs/phase1-postmortem.md](docs/phase1-postmortem.md). Everything in this
+repo is the real architecture. The future upgrade path (per-user Entra → Snowflake
+OAuth, so row-level security applies per person) is designed in
+[ARCHITECTURE.md](ARCHITECTURE.md#authentication).
 
 ## How the context works
 
@@ -51,16 +54,17 @@ and transient network failures retry automatically with backoff.
 | Path | What it is |
 |---|---|
 | `visual/` | The Power BI visual (pbiviz project). Build output goes to `visual/dist/` |
-| `visual/src/visual.ts` | UI and orchestration: chat bubbles, charts, tables, the key prompt |
+| `visual/src/visual.ts` | UI and orchestration: chat transcript, charts, tables, auth prompt |
 | `visual/src/agentClient.ts` | SSE client: parses the agent's event stream, retry logic |
 | `visual/src/contextBuilder.ts` | Turns the DataView into the REPORT CONTEXT prompt block |
-| `visual/src/settings.ts` | The Format-pane settings (proxy URL, row cap, report description) |
+| `visual/src/settings.ts` | The Format-pane settings (endpoint URL, row cap, report description) |
 | `proxy/src/functions/agentProxy.ts` | Azure Function: auth, CORS, SSE relay. The only place Snowflake credentials live |
 | `snowflake/grant-existing-agent.sql` | Wire a service user + PAT to an agent that already exists |
 | `snowflake/setup.sql` | Full from-scratch setup: role, warehouse, agent, service user, PAT |
 | `deploy.sh` | One-command Azure deploy. Fill in the EDIT THESE block first |
-| `tests/`, `tools/` | 28 unit tests and a streaming end-to-end test against a mock Snowflake |
-| `PLAN.md` | Build and review log: what was verified and how |
+| `tests/`, `tools/` | Unit tests and a streaming end-to-end test against a mock Snowflake |
+| `ARCHITECTURE.md` | The system design + platform-integration plan |
+| `docs/phase1-postmortem.md` | Why the middleware-free approach was abandoned |
 
 After any code change, these three must pass (see CLAUDE.md if you're using an AI
 coding tool against this repo):
@@ -92,7 +96,8 @@ bash tools/run-e2e.sh
   not instructions. Agent-supplied Vega-Lite specs render with `ast: true`, which
   evaluates spec expressions in an interpreter instead of compiling them to
   JavaScript. All text reaches the DOM through `textContent` (never `innerHTML`),
-  including the rendered tables. Keep it that way.
+  including the rendered tables and the rich-text renderer, which builds DOM
+  nodes itself instead of parsing HTML. Keep it that way.
 - **SQL tool blocks stream as `system_execute_sql`** since Snowflake's April 2026
   change. The old `cortex_analyst_text_to_sql` type is still parsed for
   compatibility, and it remains the correct tool type inside the agent
@@ -102,9 +107,9 @@ bash tools/run-e2e.sh
 
 | Layer | Today (pilot) | Production upgrade |
 |---|---|---|
-| Visual to proxy | Shared key in an `x-proxy-key` header, stored per user via the visual storage API. Constant-time comparison, fails closed if unset | Entra ID JWT validation in the proxy. Note: private visuals cannot use Power BI's `acquireAADToken` SSO API (AppSource visuals only, still true as of mid-2026), so the realistic path is a `launchUrl()` OAuth popup or AppSource publication |
-| Proxy to Snowflake | One service-user PAT held in Function app settings. Everyone shares that role's access | External OAuth integration with Entra ID; proxy forwards per-user tokens so Snowflake RBAC and row access policies apply per person |
-| Network | Snowflake network policy open by default in the scripts | Pin the policy to the Function's outbound IPs; put the PAT behind a Key Vault reference |
+| Visual to middleware | Shared key in an `x-proxy-key` header, stored per user via the visual storage API. Constant-time comparison, fails closed if unset. Bearer-token mode is built in for the platform-middleware integration | Per-user SSO via the internal AI platform's Entra app registration; see the [auth ladder](ARCHITECTURE.md#authentication). Note: private visuals cannot use Power BI's `acquireAADToken` SSO API (AppSource visuals only, still true as of mid-2026), so interactive sign-in goes through `launchUrl` |
+| Middleware to Snowflake | One service-user PAT held in Function app settings. Everyone shares that role's access | External OAuth integration with Entra ID; middleware forwards per-user tokens so Snowflake RBAC and row access policies apply per person |
+| Network | Snowflake network policy open by default in the scripts | Pin the policy to the Function's outbound IPs; put the PAT behind a Key Vault reference. If the account is PrivateLink-only, see [Networking](ARCHITECTURE.md#networking-read-before-deploying) first |
 
 Things the proxy does on purpose: Snowflake error bodies are logged server-side
 but never relayed to the browser (they can reveal account internals), and the
@@ -119,6 +124,7 @@ CORS isn't enforceable anyway.
 | Works in Desktop, not in the Service | Tenant blocks SDK visuals. Distribute through Organizational visuals instead of file import |
 | 401 from the proxy | Key mismatch. Re-enter the access key (it's stored per user, per browser) |
 | `snowflake_error` with 401/403 | PAT expired (90-day default), the network policy blocks the Function's IP, or the service role lost USAGE on the agent. Details are in the Function's logs, not the browser |
+| Proxy times out reaching Snowflake | The account may be PrivateLink-only and unreachable from a public Function — see [Networking](ARCHITECTURE.md#networking-read-before-deploying) |
 | Answer arrives all at once instead of streaming | The hosting plan buffers responses. Flex Consumption streams; other plans may not. Functionally it still works |
 | Empty or vague answers | Look at the context chip. Are the right fields bound? Is the row cap eating the data? Is the semantic view any good? |
 | Charts don't render, raw JSON shows instead | The spec failed validation or used expressions the interpreter rejects. The raw spec is shown on purpose so you can see what the agent sent |
@@ -130,11 +136,9 @@ CORS isn't enforceable anyway.
   page, though page-level filters and slicers affect its data like any other
   visual, which covers most "what am I looking at" questions.
 - It can't be a certified visual: certification forbids web access, and calling
-  the proxy is the whole point. Organizational-visual distribution is the
+  the middleware is the whole point. Organizational-visual distribution is the
   intended path.
-- Chat history lives in memory for the session. Power BI may unload the visual on
-  page switches, which clears it. The access key survives (browser storage); if a
-  tenant admin disables visual storage, the key becomes session-only and the
-  input placeholder says so.
+- The access key survives in browser storage; if a tenant admin disables visual
+  storage, it becomes session-only and the input placeholder says so.
 - One question at a time per visual: Send locks while a request is in flight.
   Stop (or Escape) cancels it.

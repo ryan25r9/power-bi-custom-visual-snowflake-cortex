@@ -1,7 +1,0 @@
-node_modules/
-.tmp/
-dist/
-*.pbiviz
-.DS_Store
-webpack.statistics.*.html
-tests/build/

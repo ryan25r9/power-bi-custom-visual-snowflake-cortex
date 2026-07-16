@@ -1,12 +1,15 @@
-# Phase 2 setup guide
+# Setup guide
 
-This is the runbook for **Phase 2** - the full visual that streams answers through
-an Azure Function proxy. If you just want the fast demo with no Azure and no proxy,
-set up **Phase 1** instead ([phase1/README.md](phase1/README.md)) and come back here
-when you want streaming and multi-turn chat.
+This is the deployment runbook: Snowflake service user → Azure Function proxy →
+Power BI visual, in that order. You don't need to know TypeScript or open the
+source. You do need to run a few terminal commands and paste values into config
+files.
 
-You don't need to know TypeScript or open the source. You do need to run a few
-terminal commands and paste values into config files.
+> **Before you spend an hour here:** read
+> [ARCHITECTURE.md → Networking](ARCHITECTURE.md#networking-read-before-deploying).
+> If the Snowflake account is PrivateLink-only, a default public Azure Function
+> cannot reach it and Part 2 will fail with timeouts that look like auth errors.
+> Settle the networking question with the cloud team first.
 
 Budget 2-4 hours of hands-on time, plus lead time waiting on Snowflake, Azure, and
 Power BI admins for access.
