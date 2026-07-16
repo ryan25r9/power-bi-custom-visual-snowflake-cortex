@@ -11,25 +11,23 @@
  *  SNOWFLAKE_ACCOUNT_URL  https://<org>-<account>.snowflakecomputing.com
  *  SNOWFLAKE_PAT          programmatic access token of the service user (POC auth)
  *  AGENT_DATABASE / AGENT_SCHEMA / AGENT_NAME
- *  PROXY_API_KEY          shared key the visual must present (rotate freely)
+ *  AUTH_MODE              "shared-key" (default) or "entra" — see auth.ts
+ *  PROXY_API_KEY          shared key the visual must present (shared-key mode)
+ *  ENTRA_TENANT_ID        Entra directory (tenant) GUID (entra mode)
+ *  ENTRA_AUDIENCE         expected token audience, exact match (entra mode)
  *  ALLOWED_ORIGINS        comma-separated; default https://app.powerbi.com
  *
- * Production upgrade path (see the Security model section in README.md):
- * replace PROXY_API_KEY with Entra ID JWT validation and swap SNOWFLAKE_PAT
- * for per-user External OAuth tokens. SETUP.md Part 2 covers deployment.
+ * Production upgrade path (see ARCHITECTURE.md, "Authentication"): entra mode
+ * validates per-user Entra ID JWTs; the remaining step is swapping
+ * SNOWFLAKE_PAT for per-user External OAuth tokens. SETUP.md Part 2 covers
+ * deployment.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
-import { timingSafeEqual } from "node:crypto";
+import { authenticate, sanitizeConversationId } from "./auth";
 
 app.setup({ enableHttpStream: true }); // required to relay SSE
 
 const env = (k: string, fallback = ""): string => process.env[k] ?? fallback;
-
-/** Constant-time string comparison (length leak only). */
-function keysMatch(presented: string, expected: string): boolean {
-    const a = Buffer.from(presented), b = Buffer.from(expected);
-    return a.length === b.length && timingSafeEqual(a, b);
-}
 
 export function corsHeaders(req: HttpRequest): Record<string, string> {
     const allowed = env("ALLOWED_ORIGINS", "https://app.powerbi.com").split(",").map(s => s.trim());
@@ -42,7 +40,7 @@ export function corsHeaders(req: HttpRequest): Record<string, string> {
     return {
         "Access-Control-Allow-Origin": allow,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "content-type, x-proxy-key",
+        "Access-Control-Allow-Headers": "content-type, x-proxy-key, authorization, x-conversation-id",
         "Access-Control-Max-Age": "86400",
         "Vary": "Origin"
     };
@@ -52,11 +50,22 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
     const cors = corsHeaders(req);
     if (req.method === "OPTIONS") return { status: 204, headers: cors };
 
-    // --- auth (POC: shared key; PROD: validate an Entra ID bearer JWT here) ---
-    // Fail-closed check on the configured key MUST come first; comparison is constant-time.
-    const expectedKey = env("PROXY_API_KEY");
-    if (!expectedKey || !keysMatch(req.headers.get("x-proxy-key") ?? "", expectedKey)) {
-        return { status: 401, headers: cors, jsonBody: { error: "bad or missing x-proxy-key" } };
+    // Optional log-correlation id from the visual — sanitized, used in log
+    // lines only, never trusted or forwarded to Snowflake.
+    const convId = sanitizeConversationId(req.headers.get("x-conversation-id"));
+    const tag = convId ? `[conv ${convId}] ` : "";
+
+    // --- auth (AUTH_MODE: shared-key | entra) — fail-closed dispatch in auth.ts ---
+    const auth = await authenticate(req.headers, {
+        mode: env("AUTH_MODE"),
+        sharedKey: env("PROXY_API_KEY"),
+        tenantId: env("ENTRA_TENANT_ID"),
+        audience: env("ENTRA_AUDIENCE"),
+        jwksUrl: env("ENTRA_JWKS_URL") // E2E-test hook only; leave unset in production
+    });
+    if (!auth.ok) {
+        ctx.warn(`${tag}auth rejected: ${auth.logReason}`);
+        return { status: 401, headers: cors, jsonBody: { error: auth.clientError } };
     }
 
     // --- validate body shape minimally ---
@@ -71,6 +80,7 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
     // --- relay to Snowflake ---
     const url = `${env("SNOWFLAKE_ACCOUNT_URL")}/api/v2/databases/${env("AGENT_DATABASE")}` +
                 `/schemas/${env("AGENT_SCHEMA")}/agents/${env("AGENT_NAME")}:run`;
+    ctx.log(`${tag}relaying ${body.messages.length} message(s) to agent:run`);
 
     let upstream: Response;
     try {
@@ -88,7 +98,7 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
             body: JSON.stringify({ messages: body.messages })
         });
     } catch (e) {
-        ctx.error("Snowflake unreachable", e);
+        ctx.error(`${tag}Snowflake unreachable`, e);
         return { status: 502, headers: cors, jsonBody: { error: "Snowflake unreachable" } };
     }
 
@@ -96,7 +106,7 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
         // Full upstream body goes to the Function logs only — Snowflake error text can
         // reveal account/agent internals, so the client gets a generic pointer instead.
         const detail = (await upstream.text().catch(() => "")).slice(0, 500);
-        ctx.error(`Snowflake ${upstream.status}: ${detail}`);
+        ctx.error(`${tag}Snowflake ${upstream.status}: ${detail}`);
         return {
             status: upstream.status, headers: cors,
             jsonBody: { error: "snowflake_error", detail: `Upstream error (status ${upstream.status}). See proxy logs.` }

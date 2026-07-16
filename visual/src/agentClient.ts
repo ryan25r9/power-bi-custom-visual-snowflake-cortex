@@ -21,6 +21,28 @@ export interface ChatMessage {
     content: { type: "text"; text: string }[];
 }
 
+/** How the visual authenticates to the middleware. */
+export type AuthMode = "key" | "bearer";
+
+export interface AgentConnection {
+    /** Middleware endpoint URL (the Azure Function route). */
+    url: string;
+    /** "key" sends x-proxy-key; "bearer" sends Authorization: Bearer and NO x-proxy-key. */
+    authMode: AuthMode;
+    /** Shared key or bearer token. Lives in localStorage/memory only — never in the .pbix. */
+    credential: string;
+    /** Client-generated conversation id, sent as x-conversation-id for log correlation. */
+    conversationId?: string;
+}
+
+function buildHeaders(conn: AgentConnection): Record<string, string> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (conn.authMode === "bearer") headers["Authorization"] = `Bearer ${conn.credential}`;
+    else headers["x-proxy-key"] = conn.credential;
+    if (conn.conversationId) headers["x-conversation-id"] = conn.conversationId;
+    return headers;
+}
+
 export interface StreamCallbacks {
     onStatus: (msg: string) => void;
     onTextDelta: (text: string) => void;
@@ -38,26 +60,22 @@ export interface StreamCallbacks {
 }
 
 export async function streamAgent(
-    proxyUrl: string,
-    proxyKey: string,
+    conn: AgentConnection,
     messages: ChatMessage[],
     cb: StreamCallbacks,
     signal: AbortSignal
 ): Promise<void> {
     let resp: Response;
     try {
-        resp = await fetch(proxyUrl, {
+        resp = await fetch(conn.url, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-proxy-key": proxyKey
-            },
+            headers: buildHeaders(conn),
             body: JSON.stringify({ messages }),
             signal
         });
     } catch (e) {
         if ((e as Error).name === "AbortError") return;
-        cb.onError(`Could not reach proxy. Check the Proxy URL setting and the WebAccess privilege in capabilities.json. (${(e as Error).message})`);
+        cb.onError(`Could not reach the agent service. Check the Endpoint URL setting and the WebAccess privilege in capabilities.json. (${(e as Error).message})`);
         return;
     }
 
@@ -99,8 +117,7 @@ export async function streamAgent(
  * charts, or tool activity), never on the AUTH sentinel, never after abort.
  */
 export async function streamAgentWithRetry(
-    proxyUrl: string,
-    proxyKey: string,
+    conn: AgentConnection,
     messages: ChatMessage[],
     cb: StreamCallbacks,
     signal: AbortSignal,
@@ -113,7 +130,7 @@ export async function streamAgentWithRetry(
         const deliver = <T extends unknown[]>(f: (...args: T) => void) =>
             (...args: T) => { delivered = true; f(...args); };
 
-        await streamAgent(proxyUrl, proxyKey, messages, {
+        await streamAgent(conn, messages, {
             onStatus: deliver(cb.onStatus),
             onTextDelta: deliver(cb.onTextDelta),
             onThinkingDelta: deliver(cb.onThinkingDelta),
@@ -140,8 +157,8 @@ export async function streamAgentWithRetry(
 
 /** Matches streamAgent's own onError wording (same file, keep in sync). */
 function isTransient(err: string): boolean {
-    if (err === "AUTH") return false;                          // bad key: retrying can't help
-    if (err.startsWith("Could not reach proxy.")) return true; // network-level fetch failure
+    if (err === "AUTH") return false;                          // bad credential: retrying can't help
+    if (err.startsWith("Could not reach")) return true;        // network-level fetch failure
     const m = /^Proxy error (\d+):/.exec(err);                 // pre-stream HTTP failure
     return m ? [429, 502, 503, 504].includes(Number(m[1])) : false;
 }
@@ -249,7 +266,16 @@ export function findVegaSpec(obj: any, depth = 0): object | null {
         (typeof obj.$schema === "string" && obj.$schema.includes("vega")) ||
         (("mark" in obj || "layer" in obj || "hconcat" in obj || "vconcat" in obj) &&
          ("encoding" in obj || "layer" in obj || "data" in obj));
-    if (looksVega) return obj;
+    if (looksVega) {
+        // vega-embed merges spec.usermeta.embedOptions OVER caller options, so an
+        // untrusted spec could flip ast:true back to the Function-compiler path.
+        // Strip usermeta so the interpreter sandbox stays authoritative.
+        if ("usermeta" in obj) {
+            const { usermeta, ...rest } = obj;
+            return rest;
+        }
+        return obj;
+    }
     for (const key of ["chart_spec", "chartSpec", "spec", "chart", "vega_lite_spec"]) {
         const found = findVegaSpec(obj[key], depth + 1);
         if (found) return found;

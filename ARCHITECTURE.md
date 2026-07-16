@@ -115,9 +115,13 @@ the signed-in report user. Every auth design must work around that.
 1. **Shared key (today).** One key per deployment, entered once per user,
    stored via the visual storage API (browser localStorage; never in the .pbix).
    Fine for a pilot; everyone shares the service role's access.
-2. **Bearer token (this rebuild).** The visual and proxy also support
-   `Authorization: Bearer <token>` — the transport is ready for any token the
-   middleware accepts. How the user *gets* the token is step 3.
+2. **Bearer token (built).** The proxy has a pluggable `AUTH_MODE` app
+   setting: `shared-key` (default) or `entra`, which validates
+   `Authorization: Bearer <JWT>` offline — signature via the tenant JWKS,
+   issuer (v2 + legacy v1 forms), exact `ENTRA_AUDIENCE`, expiry; fail-closed
+   if `ENTRA_TENANT_ID`/`ENTRA_AUDIENCE` are unset, and unknown modes reject
+   everything (`proxy/src/functions/auth.ts`). The visual can send a bearer
+   token instead of the shared key. How the user *gets* the token is step 3.
 3. **Interactive sign-in via `launchUrl` (design).** The visual opens the
    middleware's login page in a new tab (`host.launchUrl()` — allowed for
    organizational visuals). The user completes SSO there; the page displays a
@@ -148,7 +152,9 @@ same user's conversation" across instances. Design:
   (last 10 turns, older turns stripped of their context blocks) plus one fresh
   `REPORT CONTEXT` snapshot. The middleware needs no session store; any
   instance can serve any request. A conversation id header
-  (`x-conversation-id`) rides along for log correlation.
+  (`x-conversation-id`) rides along for log correlation — the proxy sanitizes
+  it (`[A-Za-z0-9_-]`, ≤64 chars), uses it in log lines only, and never
+  forwards it to Snowflake.
 - **Why not server-side threads:** Snowflake's Threads API persists every
   message *as sent*, so each turn's context block would accumulate server-side
   and the agent would see stale report snapshots beside the current one.

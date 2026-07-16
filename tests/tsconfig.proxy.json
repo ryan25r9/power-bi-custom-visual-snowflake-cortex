@@ -3,17 +3,15 @@
         "module": "es2022",
         "target": "ES2022",
         "moduleResolution": "node",
-        "outDir": "./build",
-        "rootDir": "../visual/src",
+        "outDir": "./build-proxy",
+        "rootDir": "../proxy/src",
         "skipLibCheck": true,
         "strict": false,
-        "types": [],
-        "typeRoots": [],
+        "types": ["node"],
+        "typeRoots": ["../proxy/node_modules/@types"],
         "lib": ["ES2022", "DOM"]
     },
     "files": [
-        "../visual/src/contextBuilder.ts",
-        "../visual/src/agentClient.ts",
-        "../visual/src/richText.ts"
+        "../proxy/src/functions/auth.ts"
     ]
 }

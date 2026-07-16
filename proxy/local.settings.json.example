@@ -9,7 +9,13 @@
     "AGENT_DATABASE": "DBS_ANALYTICS_AI",
     "AGENT_SCHEMA": "SPARTAN_TRENDS_AI",
     "AGENT_NAME": "SPARTAN_TRENDS_CA",
+
+    "AUTH_MODE": "shared-key",
     "PROXY_API_KEY": "<generate a long random string, e.g. openssl rand -hex 24>",
+    "//": "AUTH_MODE=entra switches to Authorization: Bearer <Entra JWT> — uncomment (rename) the two settings below.",
+    "//ENTRA_TENANT_ID": "<Entra directory (tenant) GUID — JWKS + issuer are derived from it>",
+    "//ENTRA_AUDIENCE": "<expected aud claim, exact match: the App Registration's client ID or Application ID URI>",
+
     "ALLOWED_ORIGINS": "https://app.powerbi.com"
   }
 }

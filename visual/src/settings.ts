@@ -1,9 +1,17 @@
 /**
  * Format-pane settings. Report authors set these once per report.
  * NOTE: these values are stored inside the .pbix — never put secrets here.
- * Per-user secrets (proxy key) are handled in visual.ts via the LocalStorage API.
+ * Per-user secrets (shared key / bearer token) are handled in visual.ts via
+ * the LocalStorage (storageV2) API.
  */
+import powerbi from "powerbi-visuals-api";
 import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
+
+/** Values must match the "authMode" enumeration in capabilities.json. */
+export const AUTH_MODE_ITEMS: powerbi.IEnumMember[] = [
+    { value: "key", displayName: "Shared key" },
+    { value: "bearer", displayName: "Bearer token" }
+];
 
 class AgentCard extends formattingSettings.SimpleCard {
     name = "agent";              // must match "objects.agent" in capabilities.json
@@ -11,10 +19,18 @@ class AgentCard extends formattingSettings.SimpleCard {
 
     proxyUrl = new formattingSettings.TextInput({
         name: "proxyUrl",
-        displayName: "Proxy URL",
-        description: "Your Azure Function endpoint, e.g. https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent",
+        displayName: "Endpoint URL",
+        description: "Your middleware endpoint, e.g. https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent",
         value: "",
         placeholder: "https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent"
+    });
+
+    authMode = new formattingSettings.ItemDropdown({
+        name: "authMode",
+        displayName: "Auth mode",
+        description: "Shared key sends x-proxy-key; Bearer token sends an Authorization: Bearer header. Users are prompted for the credential — it is never stored in the report.",
+        items: AUTH_MODE_ITEMS,
+        value: AUTH_MODE_ITEMS[0]
     });
 
     includeContext = new formattingSettings.ToggleSwitch({
@@ -39,10 +55,41 @@ class AgentCard extends formattingSettings.SimpleCard {
         placeholder: "e.g. Weekly sales performance for the Midwest region"
     });
 
-    slices = [this.proxyUrl, this.includeContext, this.maxContextRows, this.agentHint];
+    slices = [this.proxyUrl, this.authMode, this.includeContext, this.maxContextRows, this.agentHint];
+}
+
+class AppearanceCard extends formattingSettings.SimpleCard {
+    name = "appearance";         // must match "objects.appearance" in capabilities.json
+    displayName = "Appearance";
+
+    title = new formattingSettings.TextInput({
+        name: "title",
+        displayName: "Title",
+        description: "Header title shown at the top of the chat",
+        value: "Cortex Agent",
+        placeholder: "Cortex Agent"
+    });
+
+    accentColor = new formattingSettings.ColorPicker({
+        name: "accentColor",
+        displayName: "Accent color",
+        description: "Drives buttons, links, and user-message tint",
+        value: { value: "#29B5E8" }   // Snowflake blue
+    });
+
+    suggestedQuestions = new formattingSettings.TextInput({
+        name: "suggestedQuestions",
+        displayName: "Suggested questions",
+        description: "Up to four starter questions shown on the empty state, separated by semicolons. Clicking one sends it.",
+        value: "",
+        placeholder: "What are the top products?; Summarize this page"
+    });
+
+    slices = [this.title, this.accentColor, this.suggestedQuestions];
 }
 
 export class VisualFormattingSettingsModel extends formattingSettings.Model {
     agentCard = new AgentCard();
-    cards = [this.agentCard];
+    appearanceCard = new AppearanceCard();
+    cards = [this.agentCard, this.appearanceCard];
 }

@@ -43,11 +43,17 @@ as CSV, plus the active filter definitions) into a `REPORT CONTEXT` block at the
 top of the prompt. The agent sees what the user sees, and nothing else: fields that
 aren't bound to the visual are invisible to it.
 
-The chat renders more than text. Tool calls show up as a muted activity trail,
-generated SQL lands in a collapsible "SQL used" block so analysts can audit
-answers, charts the agent produces render inline (Vega-Lite via vega-embed), and
-result tables render as actual tables. There's a Stop button for runaway answers,
-and transient network failures retry automatically with backoff.
+The chat renders more than text. Answers render as rich text (headings, lists,
+code — built straight into DOM nodes, never parsed as HTML), tool calls show up
+as compact activity chips, generated SQL lands in a collapsible block with a
+copy button so analysts can audit answers, charts the agent produces render
+inline (Vega-Lite via vega-embed), and result tables render as actual tables.
+There's a Stop button for runaway answers, transient network failures retry
+automatically with backoff, and the conversation survives page switches — the
+transcript persists per user in browser storage and restores when the visual
+reloads. Report authors can set a title, an accent color, and up to four
+suggested-question chips in the Format pane; the visual follows light, dark,
+and high-contrast themes.
 
 ## Repo layout
 
@@ -55,6 +61,7 @@ and transient network failures retry automatically with backoff.
 |---|---|
 | `visual/` | The Power BI visual (pbiviz project). Build output goes to `visual/dist/` |
 | `visual/src/visual.ts` | UI and orchestration: chat transcript, charts, tables, auth prompt |
+| `visual/src/richText.ts` | Safe rich-text renderer: builds DOM nodes from a markdown subset, no HTML parsing |
 | `visual/src/agentClient.ts` | SSE client: parses the agent's event stream, retry logic |
 | `visual/src/contextBuilder.ts` | Turns the DataView into the REPORT CONTEXT prompt block |
 | `visual/src/settings.ts` | The Format-pane settings (endpoint URL, row cap, report description) |
@@ -140,5 +147,8 @@ CORS isn't enforceable anyway.
   intended path.
 - The access key survives in browser storage; if a tenant admin disables visual
   storage, it becomes session-only and the input placeholder says so.
+- Visual storage is scoped per visual *type*, not per instance: two copies of the
+  chat visual in one report share (and overwrite) the same persisted conversation.
+  Use one chat per report, or accept that "New chat" in one resets both.
 - One question at a time per visual: Send locks while a request is in flight.
   Stop (or Escape) cancels it.

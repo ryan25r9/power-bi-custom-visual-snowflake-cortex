@@ -150,6 +150,13 @@ Prefer to run the proxy locally first? `cd proxy`, `cp local.settings.json.examp
 local.settings.json`, fill in the values, `npm install && npm start`. It serves
 `http://localhost:7071/api/agent`.
 
+**Auth mode.** The proxy ships in `AUTH_MODE=shared-key` (the access key above).
+For the platform-SSO integration it also supports `AUTH_MODE=entra`, which
+validates per-user Entra ID bearer tokens instead — set `ENTRA_TENANT_ID` and
+`ENTRA_AUDIENCE` app settings (the deploy script has commented-out lines for
+them) and switch the visual's Auth mode to "Bearer token". Details and the
+sign-in design are in [ARCHITECTURE.md → Authentication](ARCHITECTURE.md#authentication).
+
 ## Part 3 - The visual
 
 You build the visual once, because Power BI only lets a visual call hosts that are
@@ -191,7 +198,7 @@ re-run.
 **4. Configure it.** Add the visual to a page, select it, then **Format pane > Cortex
 Agent**:
 
-- **Proxy URL**: `https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent` (the full
+- **Endpoint URL**: `https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent` (the full
   URL with the path this time)
 - **Report description** (optional, recommended): one sentence on what the page shows,
   e.g. "Dining spend and usage trends by category". The agent reads it with every

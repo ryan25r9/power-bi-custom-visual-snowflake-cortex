@@ -29,8 +29,16 @@ AGENT_NAME="SPARTAN_TRENDS_CA"
 # The service user's token from snowflake/grant-existing-agent.sql step 5.
 SNOWFLAKE_PAT="<paste the PAT here>"
 
+# How callers authenticate: "shared-key" (default; visual sends x-proxy-key)
+# or "entra" (visual sends Authorization: Bearer <Entra ID JWT>).
+AUTH_MODE="shared-key"
+
 # The key report users will paste into the visual. Auto-generated; or set your own.
 PROXY_API_KEY="$(openssl rand -hex 24)"
+
+# Required only when AUTH_MODE=entra — uncomment and fill in:
+#ENTRA_TENANT_ID="<Entra directory (tenant) GUID — JWKS + issuer derive from it>"
+#ENTRA_AUDIENCE="<expected aud claim: the App Registration's client ID or Application ID URI>"
 # ──────────────────────────────────────────────────────────────────────────────
 
 echo "== Resource group + Flex Consumption app (HTTP streaming capable)"
@@ -46,8 +54,16 @@ az functionapp config appsettings set -g "$RG" -n "$FUNC_APP" -o none --settings
   SNOWFLAKE_ACCOUNT_URL="$SNOWFLAKE_ACCOUNT_URL" \
   SNOWFLAKE_PAT="$SNOWFLAKE_PAT" \
   AGENT_DATABASE="$AGENT_DATABASE" AGENT_SCHEMA="$AGENT_SCHEMA" AGENT_NAME="$AGENT_NAME" \
+  AUTH_MODE="$AUTH_MODE" \
   PROXY_API_KEY="$PROXY_API_KEY" \
   ALLOWED_ORIGINS="https://app.powerbi.com"
+
+# entra mode needs the tenant + audience the proxy validates tokens against.
+if [ "$AUTH_MODE" = "entra" ]; then
+  az functionapp config appsettings set -g "$RG" -n "$FUNC_APP" -o none --settings \
+    ENTRA_TENANT_ID="${ENTRA_TENANT_ID:?AUTH_MODE=entra requires ENTRA_TENANT_ID (proxy fails closed without it)}" \
+    ENTRA_AUDIENCE="${ENTRA_AUDIENCE:?AUTH_MODE=entra requires ENTRA_AUDIENCE (proxy fails closed without it)}"
+fi
 
 echo "== Build + publish"
 ( cd "$(dirname "$0")/proxy" && npm install --no-audit --no-fund && npm run build \
@@ -55,7 +71,7 @@ echo "== Build + publish"
 
 echo
 echo "--------------------------------------------------------------"
-echo "Proxy URL (paste into the visual's Format > Cortex Agent pane):"
+echo "Endpoint URL (paste into the visual's Format > Cortex Agent pane):"
 echo "  https://${FUNC_APP}.azurewebsites.net/api/agent"
 echo "Access key (give to report users; they paste it once in the visual):"
 echo "  ${PROXY_API_KEY}"

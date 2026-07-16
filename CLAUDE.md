@@ -12,11 +12,19 @@ An earlier middleware-free approach ("Phase 1", Dynamic-M-parameter round trip) 
 See docs/phase1-postmortem.md; its code exists only in git history. Don't resurrect it.
 
 ## Map
-- `visual/` — pbiviz project. `src/visual.ts` (UI/orchestration), `src/agentClient.ts` (SSE client,
-  tool/chart extraction), `src/contextBuilder.ts` (DataView→prompt), `src/settings.ts` (format pane),
-  `capabilities.json` (dataRoles, **WebAccess privilege URL set to `pbi-cortex-chat-proxy.azurewebsites.net` — must match the deployed middleware host**).
-  Prebuilt artifact: `visual/dist/*.pbiviz`.
-- `proxy/src/functions/agentProxy.ts` — @azure/functions v4 handler; CORS, auth, SSE passthrough.
+- `visual/` — pbiviz project (v2.0). `src/visual.ts` (UI/orchestration: themed chat, tool chips,
+  SQL/chart/table cards, sticky autoscroll, storageV2 session persistence under `cortexChatSession`,
+  credential prompt), `src/richText.ts` (safe markdown-subset renderer — DOM-built, injectable doc,
+  http(s)-only links via launchUrl; unit tests grep-ban innerHTML across visual/src),
+  `src/agentClient.ts` (SSE client; takes AgentConnection {url, authMode, credential,
+  conversationId} → x-proxy-key OR Bearer, never both), `src/contextBuilder.ts` (DataView→prompt),
+  `src/settings.ts` (format pane: agent card incl. Auth mode; appearance card: title, accent color,
+  suggested questions), `capabilities.json` (dataRoles, **WebAccess privilege URL set to
+  `pbi-cortex-chat-proxy.azurewebsites.net` — must match the deployed middleware host**).
+  Prebuilt artifact: `visual/dist/*.pbiviz` (force-added; dist/ is otherwise gitignored).
+- `proxy/src/functions/agentProxy.ts` — @azure/functions v4 handler; CORS, SSE passthrough.
+  `proxy/src/functions/auth.ts` — pluggable caller auth (AUTH_MODE: shared-key | entra bearer
+  via JWKS; unknown modes fail closed; jose pinned to v5 — v6 dropped the CJS build).
 - `snowflake/setup.sql` — from-scratch role/warehouse/agent DDL, service user, PAT.
   `snowflake/grant-existing-agent.sql` — wire a service user to an existing agent (filled in for
   MSU's SPARTAN_TRENDS_CA). `deploy.sh` — Azure provisioning (MSU values prefilled).
@@ -47,7 +55,9 @@ escaping/truncation. Bugs found+fixed: findVegaSpec precedence, TextDecoder flus
 (verified against live docs): `system_execute_sql` replaced `cortex_analyst_text_to_sql` in response
 streams Apr 2026 (agent-spec type unchanged — setup.sql is correct); CREATE AGENT / PAT / endpoint
 syntax current; `acquireAADToken` still AppSource-only (ARCHITECTURE.md auth ladder stands);
-vega-embed 7.1.0 renders untrusted specs through vega-interpreter (`ast: true`); key storage uses
+vega-embed 7.1.0 renders untrusted specs through vega-interpreter (`ast: true`; findVegaSpec strips
+`usermeta` — specs would otherwise override embed options via usermeta.embedOptions and flip ast
+back to the Function-compiler path; regression test 31 guards it); key storage uses
 storageV2Service (storageService was removed in api 5.11.0); `options.jsonFilters` is properly
 typed; retry wrapper (streamAgentWithRetry) never retries after first delivery or on AUTH;
 Rendering Events wired in update().

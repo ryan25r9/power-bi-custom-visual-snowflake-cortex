@@ -21,9 +21,24 @@
     "agent": {
       "properties": {
         "proxyUrl": { "type": { "text": true } },
+        "authMode": {
+          "type": {
+            "enumeration": [
+              { "value": "key", "displayName": "Shared key" },
+              { "value": "bearer", "displayName": "Bearer token" }
+            ]
+          }
+        },
         "includeContext": { "type": { "bool": true } },
         "maxContextRows": { "type": { "numeric": true } },
         "agentHint": { "type": { "text": true } }
+      }
+    },
+    "appearance": {
+      "properties": {
+        "title": { "type": { "text": true } },
+        "accentColor": { "type": { "fill": { "solid": { "color": true } } } },
+        "suggestedQuestions": { "type": { "text": true } }
       }
     },
     "general": {

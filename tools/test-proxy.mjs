@@ -5,6 +5,8 @@
  * No frameworks — node:assert only. Run via tools/run-e2e.sh.
  */
 import assert from "node:assert/strict";
+import http from "node:http";
+import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,8 +59,10 @@ await test("a. OPTIONS preflight -> 204 + CORS", async () => {
     const res = await agentHandler(makeReq({ method: "OPTIONS", headers: { origin: ORIGIN } }), ctx);
     assert.equal(res.status, 204);
     assert.equal(res.headers["Access-Control-Allow-Origin"], ORIGIN);
-    assert.ok(res.headers["Access-Control-Allow-Headers"].includes("x-proxy-key"),
-        "Allow-Headers must list x-proxy-key");
+    for (const h of ["x-proxy-key", "authorization", "x-conversation-id"]) {
+        assert.ok(res.headers["Access-Control-Allow-Headers"].includes(h),
+            `Allow-Headers must list ${h}`);
+    }
 });
 
 // (b) bad/missing proxy key
@@ -138,6 +142,77 @@ await test("f. empty PROXY_API_KEY -> 401 even with matching empty header", asyn
         assert.equal(res.status, 401, "must fail closed when PROXY_API_KEY is unset/empty");
     } finally {
         process.env.PROXY_API_KEY = "k123";
+    }
+});
+
+// (g) x-conversation-id: sanitized value appears in log lines, raw value never does
+await test("g. x-conversation-id sanitized into log lines, never raw", async () => {
+    const lines = [];
+    const push = (...a) => lines.push(a.map(String).join(" "));
+    const capturingCtx = { log: push, warn: push, error: push };
+    const res = await agentHandler(makeReq({
+        headers: { origin: ORIGIN, "x-proxy-key": "k123", "x-conversation-id": "conv-42!!<script>" },
+        body: GOOD_BODY
+    }), capturingCtx);
+    assert.equal(res.status, 200);
+    for await (const _ of res.body) { /* drain the relay */ }
+    assert.ok(lines.some(l => l.includes("conv-42script")),
+        `sanitized conversation id missing from logs: ${JSON.stringify(lines)}`);
+    assert.ok(!lines.some(l => l.includes("<script>")), "raw header value must never be logged");
+});
+
+// (h) AUTH_MODE=entra end-to-end: bearer JWT validated against a local JWKS, then relayed
+await test("h. AUTH_MODE=entra -> bearer accepted, shared key/wrong aud rejected", async () => {
+    // Local signing key + JWKS endpoint standing in for login.microsoftonline.com.
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const KID = "e2e-kid";
+    const jwks = JSON.stringify({ keys: [{ ...publicKey.export({ format: "jwk" }), kid: KID, use: "sig", alg: "RS256" }] });
+    const jwksSrv = http.createServer((_q, s) => { s.setHeader("content-type", "application/json"); s.end(jwks); });
+    await new Promise(r => jwksSrv.listen(8044, "127.0.0.1", r));
+
+    const b64u = (s) => Buffer.from(s).toString("base64url");
+    const signJwt = (payload) => {
+        const head = b64u(JSON.stringify({ alg: "RS256", typ: "JWT", kid: KID }));
+        const body = b64u(JSON.stringify(payload));
+        return `${head}.${body}.${b64u(cryptoSign("sha256", Buffer.from(`${head}.${body}`), privateKey))}`;
+    };
+    const TENANT = "e2e-tenant";
+    const now = Math.floor(Date.now() / 1000);
+    process.env.AUTH_MODE = "entra";
+    process.env.ENTRA_TENANT_ID = TENANT;
+    process.env.ENTRA_AUDIENCE = "api://e2e-proxy";
+    process.env.ENTRA_JWKS_URL = "http://127.0.0.1:8044/keys"; // test hook in auth.ts
+    try {
+        // shared key is no longer a way in
+        const viaKey = await agentHandler(
+            makeReq({ headers: { origin: ORIGIN, "x-proxy-key": "k123" }, body: GOOD_BODY }), ctx);
+        assert.equal(viaKey.status, 401, "x-proxy-key must not authenticate in entra mode");
+
+        // wrong audience rejected
+        const badAud = signJwt({ iss: `https://login.microsoftonline.com/${TENANT}/v2.0`,
+            aud: "api://someone-else", iat: now - 30, exp: now + 300 });
+        const viaBadAud = await agentHandler(
+            makeReq({ headers: { origin: ORIGIN, authorization: `Bearer ${badAud}` }, body: GOOD_BODY }), ctx);
+        assert.equal(viaBadAud.status, 401, "wrong audience must be rejected");
+
+        // valid bearer token streams straight through
+        const good = signJwt({ iss: `https://login.microsoftonline.com/${TENANT}/v2.0`,
+            aud: "api://e2e-proxy", iat: now - 30, exp: now + 300 });
+        const res = await agentHandler(
+            makeReq({ headers: { origin: ORIGIN, authorization: `Bearer ${good}` }, body: GOOD_BODY }), ctx);
+        assert.equal(res.status, 200, "valid bearer token must pass");
+        assert.equal(res.headers["Content-Type"], "text/event-stream");
+        const dec = new TextDecoder();
+        let text = "";
+        for await (const chunk of res.body) text += dec.decode(chunk, { stream: true });
+        text += dec.decode();
+        assert.ok(text.includes("event: response.text.delta"), "SSE relay must still stream in entra mode");
+    } finally {
+        process.env.AUTH_MODE = "shared-key";
+        delete process.env.ENTRA_TENANT_ID;
+        delete process.env.ENTRA_AUDIENCE;
+        delete process.env.ENTRA_JWKS_URL;
+        await new Promise(r => jwksSrv.close(r));
     }
 });
 

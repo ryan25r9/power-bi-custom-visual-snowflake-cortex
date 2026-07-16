@@ -13,7 +13,8 @@
     "deploy": "npm run build && func azure functionapp publish $FUNC_APP_NAME"
   },
   "dependencies": {
-    "@azure/functions": "^4.16.0"
+    "@azure/functions": "^4.16.0",
+    "jose": "^5.10.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

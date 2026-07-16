@@ -1,6 +1,6 @@
 {
   "name": "snowflake-cortex-chat-visual",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Power BI custom visual: chat with a Snowflake Cortex Agent in report-filter context",
   "scripts": {
     "start": "pbiviz start",

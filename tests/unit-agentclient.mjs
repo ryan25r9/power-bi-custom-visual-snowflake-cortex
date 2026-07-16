@@ -51,16 +51,24 @@ function recorder() {
 
 const MESSAGES = [{ role: "user", content: [{ type: "text", text: "hi" }] }];
 
+/** Default AgentConnection used by most tests (shared-key mode, like v1). */
+const CONN = {
+    url: "https://proxy.example/agent",
+    authMode: "key",
+    credential: "key123",
+    conversationId: "conv-abc123"
+};
+
 /** Runs streamAgent against a mocked globalThis.fetch resolving to a Response-like object. */
-async function runStream(respPatch) {
+async function runStream(respPatch, connPatch = {}) {
     const rec = recorder();
     const resp = { ok: true, status: 200, ...respPatch };
     const origFetch = globalThis.fetch;
-    globalThis.fetch = async () => resp;
+    const fetches = [];
+    globalThis.fetch = async (url, init) => { fetches.push({ url, init }); return resp; };
     try {
         await streamAgent(
-            "https://proxy.example/agent",
-            "key123",
+            { ...CONN, ...connPatch },
             MESSAGES,
             rec.cb,
             new AbortController().signal
@@ -68,6 +76,7 @@ async function runStream(respPatch) {
     } finally {
         globalThis.fetch = origFetch;
     }
+    rec.fetchCalls = fetches;
     return rec;
 }
 
@@ -334,7 +343,7 @@ async function runRetryStream(responses, { maxRetries = 2 } = {}) {
     };
     try {
         await streamAgentWithRetry(
-            "https://proxy.example/agent", "key123", MESSAGES,
+            CONN, MESSAGES,
             rec.cb, new AbortController().signal, maxRetries, 1
         );
     } finally {
@@ -384,4 +393,55 @@ test("27. retries exhausted -> final transient error surfaces once", async () =>
     assert.equal(fetches(), 2, "initial attempt + 1 retry");
     assert.equal(rec.of("error").length, 1, "exactly one error must surface");
     assert.ok(rec.of("error")[0][1].includes("503"));
+});
+
+// --- AgentConnection: auth modes + conversation id header ------------------
+
+test("28. shared-key mode sends x-proxy-key + x-conversation-id, no Authorization", async () => {
+    const rec = await runStream({ body: streamFromChunks([HAPPY_SSE]) });
+    assert.equal(rec.fetchCalls.length, 1);
+    const { url, init } = rec.fetchCalls[0];
+    assert.equal(url, "https://proxy.example/agent");
+    assert.equal(init.method, "POST");
+    assert.equal(init.headers["x-proxy-key"], "key123");
+    assert.equal(init.headers["x-conversation-id"], "conv-abc123");
+    assert.equal("Authorization" in init.headers, false, "no Authorization header in key mode");
+    assert.deepEqual(JSON.parse(init.body), { messages: MESSAGES });
+});
+
+test("29. bearer mode sends Authorization: Bearer and NO x-proxy-key", async () => {
+    const rec = await runStream(
+        { body: streamFromChunks([HAPPY_SSE]) },
+        { authMode: "bearer", credential: "tok-42" });
+    const { init } = rec.fetchCalls[0];
+    assert.equal(init.headers["Authorization"], "Bearer tok-42");
+    assert.equal("x-proxy-key" in init.headers, false, "no x-proxy-key header in bearer mode");
+    assert.equal(init.headers["x-conversation-id"], "conv-abc123");
+    // stream still parses identically in bearer mode
+    assert.deepEqual(rec.calls, HAPPY_EXPECTED);
+});
+
+test("30. missing conversationId -> header omitted entirely", async () => {
+    const rec = await runStream(
+        { body: streamFromChunks([HAPPY_SSE]) },
+        { conversationId: undefined });
+    const { init } = rec.fetchCalls[0];
+    assert.equal("x-conversation-id" in init.headers, false);
+});
+
+test("31. findVegaSpec strips usermeta so a spec can't override embed options (ast:true)", () => {
+    const spec = {
+        $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+        mark: "bar", encoding: { x: { field: "a" } },
+        usermeta: { embedOptions: { ast: false } }
+    };
+    const out = findVegaSpec(spec);
+    assert.ok(out, "spec is still recognized");
+    assert.equal("usermeta" in out, false, "usermeta must be stripped");
+    assert.equal(out.mark, "bar", "the rest of the spec survives");
+    assert.equal("usermeta" in spec, true, "the caller's object is not mutated");
+
+    // nested + JSON-encoded paths strip too (the restore path replays stored specs)
+    const nested = findVegaSpec({ chart_spec: JSON.stringify(spec) });
+    assert.ok(nested && !("usermeta" in nested));
 });
