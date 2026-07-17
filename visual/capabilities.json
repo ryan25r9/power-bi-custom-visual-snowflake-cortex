@@ -37,8 +37,10 @@
     "appearance": {
       "properties": {
         "title": { "type": { "text": true } },
+        "titleFontSize": { "type": { "numeric": true } },
         "accentColor": { "type": { "fill": { "solid": { "color": true } } } },
-        "suggestedQuestions": { "type": { "text": true } }
+        "suggestedQuestions": { "type": { "text": true } },
+        "fontSize": { "type": { "numeric": true } }
       }
     },
     "general": {

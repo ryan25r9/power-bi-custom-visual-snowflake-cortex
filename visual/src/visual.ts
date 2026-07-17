@@ -661,6 +661,15 @@ export class Visual implements IVisual {
         style.setProperty("--cc-on-accent", luminance(accent) > 0.55 ? "#1b1a19" : "#ffffff");
         style.setProperty("--cc-accent-soft", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${dark ? 0.24 : 0.14})`);
         style.setProperty("--cc-accent-faint", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08)`);
+
+        // Type scale from the format pane. Chat text is the root em base (every
+        // smaller size in the stylesheet is em-relative, so it all scales together).
+        const clampPx = (v: unknown, lo: number, hi: number, dflt: number): number => {
+            const n = typeof v === "number" ? v : NaN;
+            return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+        };
+        style.setProperty("--cc-font", `${clampPx(this.settings?.appearanceCard.fontSize.value, 9, 24, 13)}px`);
+        style.setProperty("--cc-title-size", `${clampPx(this.settings?.appearanceCard.titleFontSize.value, 10, 28, 15)}px`);
     }
 }
 

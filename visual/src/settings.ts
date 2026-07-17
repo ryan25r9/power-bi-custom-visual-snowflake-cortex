@@ -85,7 +85,21 @@ class AppearanceCard extends formattingSettings.SimpleCard {
         placeholder: "What are the top products?; Summarize this page"
     });
 
-    slices = [this.title, this.accentColor, this.suggestedQuestions];
+    titleFontSize = new formattingSettings.NumUpDown({
+        name: "titleFontSize",
+        displayName: "Title text size",
+        description: "Header title size in px (the ❄ logo scales with it)",
+        value: 15
+    });
+
+    fontSize = new formattingSettings.NumUpDown({
+        name: "fontSize",
+        displayName: "Text size",
+        description: "Base chat text size in px — bubbles, chips, and cards all scale from it",
+        value: 13
+    });
+
+    slices = [this.title, this.titleFontSize, this.accentColor, this.suggestedQuestions, this.fontSize];
 }
 
 export class VisualFormattingSettingsModel extends formattingSettings.Model {
