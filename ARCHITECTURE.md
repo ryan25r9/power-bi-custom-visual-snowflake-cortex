@@ -63,17 +63,34 @@ an Azure Function layer with real SSO. The plan is to **lean into that**: the
 visual calls the platform middleware instead of (or via) the bundled proxy, and
 the platform handles identity and Snowflake credential exchange.
 
-What we believe about that platform — **UNVERIFIED, from second-hand notes;
-confirm every line with the platform team before building against it**:
+What we know about that platform — **VERIFIED 2026-07-17 from screenshots of
+its backend source** (`the platform backend source`), which decode the
+earlier second-hand notes:
 
-- Sign-in is SSO, similar to the app.powerbi.com login, backed by an **Azure
-  App registration**. Login yields a first (Entra) token.
-- A generator function then exchanges that for a **second token used for
-  Snowflake authentication** (i.e., per-user Snowflake OAuth rather than a
-  shared service PAT).
-- It enforces **CORS**; `https://app.powerbi.com` is being requested as an
-  allowed origin. The Function App has an origin-authentication /
-  allowed-origins configuration section where cross-origin callers are added.
+- **Per-user delegated auth via OAuth On-Behalf-Of.** The backend is a
+  confidential client (app id + secret from Key Vault) that takes the caller's
+  Entra bearer token and exchanges it with MSAL `acquire_token_on_behalf_of`
+  for a Snowflake-audience access token (scope of the form
+  `https://<snowflake-app-guid>/session:scope-any`). That means **Snowflake
+  External OAuth with Entra is already configured at the account level** —
+  the end-state we planned as "Phase 3" is operational there today. No service
+  principal, no shared PAT: every Cortex call runs *as the end user*.
+- **Role selection is a request header.** The backend sends
+  `X-Snowflake-Role: <sg_group>` — the role comes from the user's AD
+  security-group membership (hence the `SG_*` role naming), and
+  `session:scope-any` lets the token assume any role the user actually holds.
+  Snowflake enforces membership; the client merely selects.
+- **Server-side threads.** The backend has `create_thread(self, application)` —
+  it uses the Cortex Threads API, keyed by an *application* parameter,
+  implying a platform-level registry of applications/agents. (Their backend
+  may use the generic `agent:run` form where the agent config rides the
+  request rather than a named agent object — confirm.)
+- **Streaming-ready headers.** Requests are sent with
+  `Accept: application/json, text/event-stream` — the SSE path exists at
+  least toward Snowflake; whether the platform relays it to callers is still
+  open (question 1).
+- It enforces **CORS** at its gateway; as field-tested, the endpoint currently
+  returns no CORS headers to preflights (see question 3 for the fix it needs).
 
 ### Open questions for the platform team
 
@@ -84,10 +101,19 @@ Get written answers before wiring Model B:
    chunked), or buffer? Streaming is load-bearing for UX; if it buffers, we
    front it with our relay (Model A function calling the platform) or accept
    degraded UX.
-2. **Token acquisition from inside a Power BI visual** — what exactly does the
-   middleware accept: an Entra access token (what audience/scope?), a platform
-   session cookie, or an API key? A visual iframe cannot silently mint Entra
-   tokens (see Authentication below), so the answer determines the sign-in UX.
+2. **Token acquisition from inside a Power BI visual — now THE integration
+   question.** The backend's OBO flow needs the *user's* Entra access token
+   (audience = the platform's backend app registration) as input, and a
+   sandboxed visual cannot silently mint one (see Authentication below). Ask
+   the platform team: can they host a small sign-in page that issues a token
+   (or short-lived pairing code) the user can hand to the visual — the
+   `launchUrl` flow in the auth ladder? Everything downstream of that token
+   (Snowflake OAuth, role, RLS) they already handle.
+2b. **Agent/application registry** — `create_thread(self, application)`
+   implies agents are selected by an application parameter. What are the valid
+   values, who registers new ones, and is the desired `X-Snowflake-Role`
+   selectable per request by the caller (bounded by the user's AD groups)?
+   This determines how the visual's "agent" setting maps onto their API.
 3. **CORS** — the gateway must (a) answer `OPTIONS` preflights on the endpoint,
    (b) return `Access-Control-Allow-Origin: *`, and (c) allow the
    `authorization` + `content-type` request headers. Allowlisting
@@ -139,8 +165,11 @@ the signed-in report user. Every auth design must work around that.
    flowing (via 3, or via AppSource publication unlocking `acquireAADToken`),
    the middleware exchanges Entra tokens for Snowflake OAuth tokens (External
    OAuth integration) and Snowflake RBAC / row-level security applies **per
-   person** instead of per service user. The platform's token-generator
-   function appears to already do this exchange — confirm and reuse.
+   person** instead of per service user. **Verified 2026-07-17: the platform
+   middleware already does exactly this** (MSAL On-Behalf-Of →
+   `session:scope-any` Snowflake token + `X-Snowflake-Role` from the user's AD
+   group). Integrating with it collapses Phase 3 into "solve step 3's token
+   handoff" — the Snowflake side is done.
 
 ## Session management
 
