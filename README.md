@@ -119,9 +119,12 @@ bash tools/run-e2e.sh
 | Network | Snowflake network policy open by default in the scripts | Pin the policy to the Function's outbound IPs; put the PAT behind a Key Vault reference. If the account is PrivateLink-only, see [Networking](ARCHITECTURE.md#networking-read-before-deploying) first |
 
 Things the proxy does on purpose: Snowflake error bodies are logged server-side
-but never relayed to the browser (they can reveal account internals), and the
-CORS wildcard only applies to origin-less clients like Power BI Desktop, where
-CORS isn't enforceable anyway.
+but never relayed to the browser (they can reveal account internals), and CORS
+defaults to a wildcard — Power BI runs visuals in a sandboxed iframe whose
+Origin is the literal string `null`, so there is no domain to allowlist. That's
+safe because CORS is never the security boundary here: auth is the explicit
+key/token header, validated fail-closed, with credentials (cookies) never used.
+See [ARCHITECTURE.md → CORS and origins](ARCHITECTURE.md#cors-and-origins).
 
 ## Troubleshooting
 

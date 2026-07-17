@@ -16,6 +16,6 @@
     "//ENTRA_TENANT_ID": "<Entra directory (tenant) GUID — JWKS + issuer are derived from it>",
     "//ENTRA_AUDIENCE": "<expected aud claim, exact match: the App Registration's client ID or Application ID URI>",
 
-    "ALLOWED_ORIGINS": "https://app.powerbi.com"
+    "ALLOWED_ORIGINS": "*"
   }
 }

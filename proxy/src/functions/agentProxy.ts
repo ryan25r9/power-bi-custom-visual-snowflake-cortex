@@ -30,13 +30,19 @@ app.setup({ enableHttpStream: true }); // required to relay SSE
 const env = (k: string, fallback = ""): string => process.env[k] ?? fallback;
 
 export function corsHeaders(req: HttpRequest): Record<string, string> {
-    const allowed = env("ALLOWED_ORIGINS", "https://app.powerbi.com").split(",").map(s => s.trim());
+    // Power BI hosts custom visuals in a sandboxed iframe WITHOUT allow-same-origin,
+    // so the visual has an opaque origin and its CORS requests carry the literal
+    // string "null" as Origin (Service: verified; Desktop: null or absent). There is
+    // no real domain to allowlist, hence the "*" default. That is safe ONLY because
+    // auth rides explicit fail-closed headers (auth.ts) and we never send
+    // Allow-Credentials — CORS is not a security boundary for this endpoint.
+    // If Microsoft ever gives visuals a real origin, tightening is a one-line
+    // ALLOWED_ORIGINS change; the allowlist branch below already handles it.
+    const allowed = env("ALLOWED_ORIGINS", "*").split(",").map(s => s.trim());
     const origin = req.headers.get("origin") ?? "";
-    // Power BI Desktop sends no/null Origin; the Service sends https://app.powerbi.com.
-    // The "*" branch only fires for origin-less clients (Desktop/curl) and we never use
-    // Allow-Credentials, so it grants nothing a non-browser client doesn't already have.
-    // Browser callers from unlisted origins get allowed[0], which won't match -> blocked.
-    const allow = allowed.includes(origin) ? origin : (origin ? allowed[0] : "*");
+    const allow = allowed.includes("*") ? "*"
+        : allowed.includes(origin) ? origin
+        : allowed[0]; // unlisted browser origins fail the browser's CORS check
     return {
         "Access-Control-Allow-Origin": allow,
         "Access-Control-Allow-Methods": "POST, OPTIONS",

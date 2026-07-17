@@ -216,6 +216,35 @@ await test("h. AUTH_MODE=entra -> bearer accepted, shared key/wrong aud rejected
     }
 });
 
+await test("i. sandboxed-visual Origin 'null' -> wildcard CORS by default; allowlist mode stays strict", async () => {
+    // Power BI visuals live in a sandboxed iframe (opaque origin): the browser sends
+    // the literal string "null" as Origin. With ALLOWED_ORIGINS unset the proxy must
+    // answer "*" so the visual works from Service, Desktop (null or absent), anywhere.
+    delete process.env.ALLOWED_ORIGINS;
+    try {
+        const pre = await agentHandler(makeReq({ method: "OPTIONS", headers: { origin: "null" } }), ctx);
+        assert.equal(pre.status, 204);
+        assert.equal(pre.headers["Access-Control-Allow-Origin"], "*", "default must be wildcard for Origin: null");
+        assert.equal("Access-Control-Allow-Credentials" in pre.headers, false, "wildcard is only safe credential-less");
+
+        const noOrigin = await agentHandler(makeReq({ method: "OPTIONS", headers: {} }), ctx);
+        assert.equal(noOrigin.headers["Access-Control-Allow-Origin"], "*", "absent Origin (Desktop) must also get *");
+
+        const res = await agentHandler(
+            makeReq({ headers: { origin: "null", "x-proxy-key": "k123" }, body: GOOD_BODY }), ctx);
+        assert.equal(res.status, 200, "null-origin caller with a valid key must stream");
+        assert.equal(res.headers["Access-Control-Allow-Origin"], "*");
+
+        // Tightened deployments keep strict allowlist semantics: no null echo, no wildcard.
+        process.env.ALLOWED_ORIGINS = "https://example.com";
+        const strict = await agentHandler(makeReq({ method: "OPTIONS", headers: { origin: "null" } }), ctx);
+        assert.equal(strict.headers["Access-Control-Allow-Origin"], "https://example.com",
+            "allowlist mode must NOT echo null (browser blocks the unlisted caller)");
+    } finally {
+        process.env.ALLOWED_ORIGINS = "https://app.powerbi.com"; // restore for any later checks
+    }
+});
+
 if (failures > 0) {
     console.error(`\n${failures} test(s) failed`);
     process.exit(1);

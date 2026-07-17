@@ -88,10 +88,15 @@ Get written answers before wiring Model B:
    middleware accept: an Entra access token (what audience/scope?), a platform
    session cookie, or an API key? A visual iframe cannot silently mint Entra
    tokens (see Authentication below), so the answer determines the sign-in UX.
-3. **CORS** — confirmed origins list must include `https://app.powerbi.com`
-   (Service) and note that **Power BI Desktop sends no Origin header** (webview;
-   CORS is not enforceable there — the bundled proxy already special-cases
-   origin-less clients).
+3. **CORS** — the gateway must (a) answer `OPTIONS` preflights on the endpoint,
+   (b) return `Access-Control-Allow-Origin: *`, and (c) allow the
+   `authorization` + `content-type` request headers. Allowlisting
+   `https://app.powerbi.com` is NOT sufficient and NOT what will arrive: a
+   sandboxed visual's Origin is the literal string `null` (see "CORS and
+   origins" below — field-confirmed against this very gateway, which currently
+   returns no CORS headers at all). Auth must ride the `Authorization` header,
+   never cookies: cookie-credentialed CORS is both blocked/unsafe here and
+   impossible from the visual sandbox anyway.
 4. **Session/conversation state** — does the platform track conversations
    server-side (thread ids) or is each call stateless? (Our current design
    resends capped history each call; see Session management.)
@@ -163,14 +168,37 @@ same user's conversation" across instances. Design:
 
 ## CORS and origins
 
-- The bundled proxy reads `ALLOWED_ORIGINS` (default
-  `https://app.powerbi.com`) and echoes a matching `Access-Control-Allow-Origin`.
-- Power BI **Desktop** requests are origin-less (webview): CORS cannot gate
-  them, so the shared key / bearer token is the only gate there. This is why
-  auth must never rely on CORS alone.
-- For Model B, the same origins must be approved on the platform Function App's
-  allowed-origins configuration — that request is already in flight for
-  `https://app.powerbi.com`.
+**A custom visual's Origin is the literal string `null` — verified 2026-07-16**
+(4-lens research pass: Microsoft docs, field reports, Fetch/HTML specs,
+adversarial counter-search). The chain: Power BI hosts visuals in a sandboxed
+iframe *without* `allow-same-origin` → the visual gets an **opaque origin** →
+CORS-mode fetches serialize `Origin: null`. Confidence ratings:
+
+- *Certain*: `Origin` is a forbidden header — no code in the visual can set or
+  change it; and in the **Service**, visual fetches carry `Origin: null`
+  (field-confirmed repeatedly 2021–2025, incl. Microsoft support statements).
+- *High*: **Desktop** sends `null` or omits the header; no privilege,
+  certification tier, or embedding mode yields a real origin (zero counter-
+  examples since the 2016 sandbox change).
+- *Caveat*: this is undocumented Microsoft implementation behavior, not a
+  contract — it changed once (March 2016) and could change again.
+
+Consequences, baked into the bundled proxy:
+
+- `ALLOWED_ORIGINS` defaults to `*`: there is **no real domain to allowlist**,
+  and `*` is the only value that works under every open ambiguity (null,
+  absent, or a hypothetical future real origin). Wildcard is safe *only*
+  because auth rides explicit fail-closed headers and the proxy never sends
+  `Access-Control-Allow-Credentials`. If Microsoft ever gives visuals a real
+  origin, tightening is a one-line setting change (the allowlist branch is
+  still there).
+- **Never echo `Access-Control-Allow-Origin: null`** as a "tighter" option —
+  every sandboxed frame and `file://` page on earth shares the `null` origin,
+  and pairing it with credentials is a documented attack surface. It's
+  wildcard-equivalent with extra risk.
+- **Cookie/session auth cannot work from a visual** — the sandbox has no
+  cookie access in the first place. Any auth design for this endpoint must
+  carry the credential in a request header.
 
 ## Streaming and the WebAccess privilege
 

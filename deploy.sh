@@ -56,7 +56,7 @@ az functionapp config appsettings set -g "$RG" -n "$FUNC_APP" -o none --settings
   AGENT_DATABASE="$AGENT_DATABASE" AGENT_SCHEMA="$AGENT_SCHEMA" AGENT_NAME="$AGENT_NAME" \
   AUTH_MODE="$AUTH_MODE" \
   PROXY_API_KEY="$PROXY_API_KEY" \
-  ALLOWED_ORIGINS="https://app.powerbi.com"
+  ALLOWED_ORIGINS="*"   # visuals run in a sandboxed iframe: their Origin is the literal "null", so there is no domain to allowlist. Auth is the key/token header, never CORS.
 
 # entra mode needs the tenant + audience the proxy validates tokens against.
 if [ "$AUTH_MODE" = "entra" ]; then

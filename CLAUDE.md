@@ -60,7 +60,10 @@ vega-embed 7.1.0 renders untrusted specs through vega-interpreter (`ast: true`; 
 back to the Function-compiler path; regression test 31 guards it); key storage uses
 storageV2Service (storageService was removed in api 5.11.0); `options.jsonFilters` is properly
 typed; retry wrapper (streamAgentWithRetry) never retries after first delivery or on AUTH;
-Rendering Events wired in update().
+Rendering Events wired in update(). 2026-07-16 research pass (4 lenses + adversarial synthesis):
+custom visuals fetch with `Origin: null` (sandboxed iframe, opaque origin; Service CERTAIN,
+Desktop null-or-absent HIGH; no privilege/certification/embedding yields a real origin) — proxy
+therefore defaults ALLOWED_ORIGINS="*", never sends Allow-Credentials, and CORS is never auth.
 
 ## Watch list (re-check on future reviews)
 1. vega/vega-lite stay on 5.x until Snowflake `data_to_chart` output confirms vega-lite v6 `$schema`;
@@ -80,8 +83,11 @@ Rendering Events wired in update().
 5. Rich text in answers must stay DOM-built (no `innerHTML`, no HTML parsing of agent output) —
    that IS the XSS posture. Any markdown-library proposal is a regression; reject it.
 6. MSAI platform middleware integration (ARCHITECTURE.md Model B) is blocked on the open-questions
-   checklist — endpoint contract, token acquisition, CORS approval for app.powerbi.com, streaming
-   support. Don't build against guessed answers; the notes that exist are marked unverified.
+   checklist — endpoint contract, token acquisition, CORS (they must allow `*` + preflight, NOT an
+   app.powerbi.com allowlist — visuals present Origin: null), streaming support. Don't build
+   against guessed answers; the notes that exist are marked unverified.
+7. The null-Origin behavior is undocumented Microsoft implementation (changed once, March 2016).
+   If visuals ever get a real origin, tighten ALLOWED_ORIGINS to it (allowlist branch exists).
 
 ## Constraints
 - Certified-visual rules forbid web access — this visual is intentionally uncertified/organizational; don't "fix" that.
