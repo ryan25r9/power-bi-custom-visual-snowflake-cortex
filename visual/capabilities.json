@@ -1,4 +1,5 @@
 {
+  "suppressDefaultTitle": true,
   "dataRoles": [
     {
       "displayName": "Context fields",
