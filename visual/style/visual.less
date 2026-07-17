@@ -13,6 +13,8 @@
   --cc-text: #201f1e;
   --cc-muted: #605e5c;
   --cc-border: #e1dfdd;
+  --cc-brand: #29b5e8;   // Snowflake blue: header logo + title (both themes)
+  --cc-frame: #e6e6e6;   // default outer visual border (both themes)
   --cc-danger: #a4262c;
   --cc-danger-bg: #fdf3f4;
   --cc-code-bg: #1e1e1e;
@@ -25,6 +27,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  box-sizing: border-box; // border must live inside the viewport, not overflow it
+  border: 2px solid var(--cc-frame);
+  border-radius: 15px;
+  overflow: hidden; // clip header/composer into the rounded corners
   font-family: "Segoe UI", -apple-system, "Helvetica Neue", sans-serif;
   font-size: 12px;
   line-height: 1.45;
@@ -47,6 +53,8 @@
 
 // High contrast: hard borders everywhere (colors come inline from the palette).
 .cc-root.cc-hc {
+  --cc-frame: var(--cc-border); // outer frame follows the host high-contrast palette
+  .cc-title, .cc-logo, .cc-welcome-ic { color: inherit; } // no brand blue in HC
   .cc-bubble, .cc-card, .cc-tool, .cc-suggestion, .cc-input, .cc-credinput,
   .cc-sendbtn, .cc-btn, .cc-ghostbtn, .cc-banner, .cc-jump {
     border: 1px solid var(--cc-border) !important;
@@ -71,12 +79,13 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  .cc-logo { color: var(--cc-accent); flex: none; }
+  .cc-logo { color: var(--cc-brand); font-size: 14px; line-height: 1; flex: none; }
 }
 
 .cc-title {
   font-size: 13px;
   font-weight: 600;
+  color: var(--cc-brand);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -418,7 +427,7 @@
     justify-content: center;
     color: var(--cc-accent);
     margin-bottom: 2px;
-    .cc-welcome-ic { width: 18px; height: 18px; }
+    .cc-welcome-ic { font-size: 18px; line-height: 1; color: var(--cc-brand); }
   }
   .cc-welcome-title { font-size: 13.5px; font-weight: 600; }
   .cc-welcome-sub { font-size: 11px; color: var(--cc-muted); max-width: 340px; }
@@ -555,7 +564,7 @@
 
 .cc-composer {
   display: flex;
-  align-items: flex-end;
+  align-items: center; // keeps Send centered on the input (flex-end sat it ~1px low)
   gap: 8px;
   padding: 8px 10px;
   border-top: 1px solid var(--cc-border);

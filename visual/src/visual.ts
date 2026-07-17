@@ -432,7 +432,7 @@ export class Visual implements IVisual {
         // Header: title + live context chip + New chat
         const header = el("div", "cc-header", this.root);
         const titleWrap = el("div", "cc-titlewrap", header);
-        titleWrap.appendChild(svgIcon(ICONS.snowflake, "cc-logo"));
+        el("span", "cc-logo", titleWrap).textContent = "❄"; // the actual snowflake mark, Snowflake blue
         this.titleEl = el("span", "cc-title", titleWrap);
         this.titleEl.textContent = "Cortex Agent";
         this.contextChip = el("span", "cc-chip", header);
@@ -457,7 +457,7 @@ export class Visual implements IVisual {
 
         // Empty state (first child; stays put, toggled via display)
         this.welcomeEl = el("div", "cc-welcome", this.messagesEl);
-        el("div", "cc-welcome-glyph", this.welcomeEl).appendChild(svgIcon(ICONS.snowflake, "cc-welcome-ic"));
+        el("span", "cc-welcome-ic", el("div", "cc-welcome-glyph", this.welcomeEl)).textContent = "❄";
         el("div", "cc-welcome-title", this.welcomeEl).textContent = "Ask about the data on this page";
         el("div", "cc-welcome-sub", this.welcomeEl).textContent =
             "Answers use the fields bound to this visual, filtered to what you're viewing.";
@@ -957,7 +957,6 @@ const ICONS: Record<string, string[]> = {
     stop: ["M4.5 4.5h7v7h-7z"],
     chevronDown: ["M4 6.5l4 4 4-4"],
     warning: ["M8 2.5l6 11H2l6-11Z", "M8 6.5v3", "M8 11.7v.01"],
-    snowflake: ["M8 1.5v13", "M2.4 4.75l11.2 6.5", "M13.6 4.75l-11.2 6.5"],
     table: ["M2.5 3.5h11v9h-11z", "M2.5 6.5h11", "M6.5 6.5v6"]
 };
 
