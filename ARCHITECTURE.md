@@ -64,8 +64,7 @@ visual calls the platform middleware instead of (or via) the bundled proxy, and
 the platform handles identity and Snowflake credential exchange.
 
 What we know about that platform — **VERIFIED 2026-07-17 from screenshots of
-its backend source** (`the platform backend source`), which decode the
-earlier second-hand notes:
+its backend source**, which decode the earlier second-hand notes:
 
 - **Per-user delegated auth via OAuth On-Behalf-Of.** The backend is a
   confidential client (app id + secret from Key Vault) that takes the caller's
@@ -110,9 +109,11 @@ Get written answers before wiring Model B:
    `launchUrl` flow in the auth ladder? Everything downstream of that token
    (Snowflake OAuth, role, RLS) they already handle.
 2b. **Agent/application registry** — `create_thread(self, application)`
-   implies agents are selected by an application parameter. What are the valid
-   values, who registers new ones, and is the desired `X-Snowflake-Role`
-   selectable per request by the caller (bounded by the user's AD groups)?
+   implies agents are selected by an application parameter. CONFIRMED
+   2026-07-17: onboarding = we give the platform team the security group /
+   Snowflake role and the agent name, and they register the application on
+   their side. Still to pin down: the application identifier we then pass per
+   request, whether one registration can cover multiple roles, and lead time.
    This determines how the visual's "agent" setting maps onto their API.
 3. **CORS** — the gateway must (a) answer `OPTIONS` preflights on the endpoint,
    (b) return `Access-Control-Allow-Origin: *`, and (c) allow the
