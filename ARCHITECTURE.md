@@ -136,6 +136,45 @@ Get written answers before wiring Model B:
 6. **Rate limits / quotas / logging** — anything that shapes retry behavior or
    payload size.
 
+## Agent selection at scale
+
+**The principle: the `.pbiviz` is built once, distributed once via
+Organizational visuals, and never rebuilt for agent changes.** Everything
+agent-related is runtime configuration. The visual has exactly one
+agent-facing setting — Format pane → **Agent profile** — and what that name
+means depends on the middleware behind the Endpoint URL:
+
+- **Model A (bundled proxy): named agent profiles.** The proxy's
+  `AGENT_PROFILES` app setting maps profile names to
+  `{database, schema, agent, patSetting?}`; the visual sends the chosen name
+  as `x-agent-profile`, and the proxy resolves it fail-closed
+  (`proxy/src/functions/profiles.ts`): unknown names, bad characters,
+  malformed config, or a missing per-profile credential reject the request —
+  never a silent fallback to the wrong agent. `patSetting` names *another app
+  setting* holding that profile's PAT, which is how different agents run
+  under different Snowflake roles (a PAT's role restriction is fixed at
+  creation). No header ⇒ the classic `AGENT_DATABASE/SCHEMA/NAME` default.
+  Exposing a new agent = one app-settings edit by whoever owns the Function
+  App — and that human step is not overhead, because a new agent *always*
+  needs a Snowflake admin to grant access anyway; profiles collapse "grant
+  access + wire it up" into the one step that had to happen regardless.
+  **Profiles are routing, not authorization**: every credential registered in
+  `AGENT_PROFILES` is reachable by *every* authenticated caller of that proxy
+  (the key/token gates the proxy, not individual profiles). Register only
+  agents and roles you'd expose to all users of the deployment; audiences
+  with different privileges get **separate proxy deployments with separate
+  keys**. True per-user authorization is Model B's per-user OBO flow.
+- **Model B (platform middleware): application id.** The platform keys
+  agents/threads by an *application* parameter and registers one when given a
+  role + agent name (open question 2b). The same Format-pane field carries
+  that id; roles then take care of themselves via AD group membership, and
+  agent switching is self-service for any report author, bounded by the
+  platform registry.
+- **The one build-time exception** is the WebAccess host list (baked into the
+  package): when the platform's QA and prod gateway hostnames are confirmed,
+  add them **alongside** the bundled-proxy host in a single build so the
+  rebuild → reimport → org-visual re-approval cycle is paid once.
+
 ## Authentication
 
 ### The constraint that shapes everything

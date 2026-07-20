@@ -59,7 +59,7 @@ await test("a. OPTIONS preflight -> 204 + CORS", async () => {
     const res = await agentHandler(makeReq({ method: "OPTIONS", headers: { origin: ORIGIN } }), ctx);
     assert.equal(res.status, 204);
     assert.equal(res.headers["Access-Control-Allow-Origin"], ORIGIN);
-    for (const h of ["x-proxy-key", "authorization", "x-conversation-id"]) {
+    for (const h of ["x-proxy-key", "authorization", "x-conversation-id", "x-agent-profile"]) {
         assert.ok(res.headers["Access-Control-Allow-Headers"].includes(h),
             `Allow-Headers must list ${h}`);
     }
@@ -242,6 +242,43 @@ await test("i. sandboxed-visual Origin 'null' -> wildcard CORS by default; allow
             "allowlist mode must NOT echo null (browser blocks the unlisted caller)");
     } finally {
         process.env.ALLOWED_ORIGINS = "https://app.powerbi.com"; // restore for any later checks
+    }
+});
+
+await test("j. x-agent-profile routes per profile; unknown/invalid names fail closed", async () => {
+    process.env.AGENT_PROFILES = JSON.stringify({
+        "twin":  { database: "AI_DB", schema: "AGENTS", agent: "REPORT_CHAT_AGENT" }, // the mock's real path
+        "other": { database: "AI_DB", schema: "AGENTS", agent: "OTHER_AGENT" },       // a path the mock 404s
+        "cred":  { database: "AI_DB", schema: "AGENTS", agent: "REPORT_CHAT_AGENT",
+                   patSetting: "SNOWFLAKE_PAT_CRED" }                                 // per-profile credential
+    });
+    process.env.SNOWFLAKE_PAT_CRED = "WRONG_PAT"; // mock only accepts TEST_PAT
+    try {
+        const twin = await agentHandler(makeReq({
+            headers: { origin: ORIGIN, "x-proxy-key": "k123", "x-agent-profile": "twin" }, body: GOOD_BODY }), ctx);
+        assert.equal(twin.status, 200, "profile resolving to the mock's path must stream");
+
+        const other = await agentHandler(makeReq({
+            headers: { origin: ORIGIN, "x-proxy-key": "k123", "x-agent-profile": "other" }, body: GOOD_BODY }), ctx);
+        assert.equal(other.status, 404, "different agent name must hit a different upstream path (mock 404s it)");
+        assert.equal(other.jsonBody.error, "snowflake_error");
+
+        // per-profile PAT actually reaches Snowflake: this profile's credential is
+        // deliberately wrong, and the mock (which only accepts TEST_PAT) must see it.
+        const cred = await agentHandler(makeReq({
+            headers: { origin: ORIGIN, "x-proxy-key": "k123", "x-agent-profile": "cred" }, body: GOOD_BODY }), ctx);
+        assert.equal(cred.status, 401, "mock must receive the PROFILE's PAT, not the shared one");
+        assert.equal(cred.jsonBody.error, "snowflake_error");
+
+        for (const name of ["nope", "../etc"]) {
+            const res = await agentHandler(makeReq({
+                headers: { origin: ORIGIN, "x-proxy-key": "k123", "x-agent-profile": name }, body: GOOD_BODY }), ctx);
+            assert.equal(res.status, 400, `"${name}" must be rejected before any upstream call`);
+            assert.equal(res.jsonBody.error, "unknown or misconfigured agent profile");
+        }
+    } finally {
+        delete process.env.AGENT_PROFILES;
+        delete process.env.SNOWFLAKE_PAT_CRED;
     }
 });
 

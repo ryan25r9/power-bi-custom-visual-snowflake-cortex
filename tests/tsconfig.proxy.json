@@ -12,6 +12,7 @@
         "lib": ["ES2022", "DOM"]
     },
     "files": [
-        "../proxy/src/functions/auth.ts"
+        "../proxy/src/functions/auth.ts",
+        "../proxy/src/functions/profiles.ts"
     ]
 }

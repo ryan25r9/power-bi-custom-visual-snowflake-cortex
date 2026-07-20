@@ -150,6 +150,29 @@ Prefer to run the proxy locally first? `cd proxy`, `cp local.settings.json.examp
 local.settings.json`, fill in the values, `npm install && npm start`. It serves
 `http://localhost:7071/api/agent`.
 
+**Multiple agents (optional).** One deployed proxy can front several agents via
+the `AGENT_PROFILES` app setting — a JSON map of profile name → target. Report
+authors then pick an agent by typing the profile name into the visual's
+**Format pane → Cortex Agent → Agent profile** field; blank means the default
+agent above. Example (`patSetting` names another app setting holding that
+profile's PAT, so different agents can run under different roles):
+
+```bash
+az functionapp config appsettings set -g rg-pbi-cortex-chat -n pbi-cortex-chat-proxy --settings \
+  'AGENT_PROFILES={"spartan-trends":{"database":"DBS_ANALYTICS_AI","schema":"SPARTAN_TRENDS_AI","agent":"SPARTAN_TRENDS_CA"},"dining":{"database":"DBS_ANALYTICS_AI","schema":"DINING_AI","agent":"DINING_CA","patSetting":"SNOWFLAKE_PAT_DINING"}}' \
+  'SNOWFLAKE_PAT_DINING=<that agent role'"'"'s PAT>'
+```
+
+Adding an agent later is just this command again — no code change, no visual
+rebuild, no reimport. Unknown profile names are rejected (the visual shows an
+error), so a typo can't silently answer from the wrong agent.
+
+> **Profiles are not per-user security.** Anyone who can call this proxy (has
+> the access key) can select any registered profile — and with it, that
+> profile's role. Only register agents you'd expose to every user of this
+> deployment; if two audiences need different privileges, deploy a second
+> proxy with its own key.
+
 **Auth mode.** The proxy ships in `AUTH_MODE=shared-key` (the access key above).
 For the platform-SSO integration it also supports `AUTH_MODE=entra`, which
 validates per-user Entra ID bearer tokens instead — set `ENTRA_TENANT_ID` and
@@ -200,6 +223,8 @@ Agent**:
 
 - **Endpoint URL**: `https://pbi-cortex-chat-proxy.azurewebsites.net/api/agent` (the full
   URL with the path this time)
+- **Agent profile** (optional): leave blank for the proxy's default agent, or type a
+  profile name the proxy owner has registered (see "Multiple agents" in Part 2)
 - **Report description** (optional, recommended): one sentence on what the page shows,
   e.g. "Dining spend and usage trends by category". The agent reads it with every
   question.

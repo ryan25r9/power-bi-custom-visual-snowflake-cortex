@@ -445,3 +445,24 @@ test("31. findVegaSpec strips usermeta so a spec can't override embed options (a
     const nested = findVegaSpec({ chart_spec: JSON.stringify(spec) });
     assert.ok(nested && !("usermeta" in nested));
 });
+
+test("32. agent profile rides as x-agent-profile only when set", async () => {
+    const withProfile = await runStream(
+        { body: streamFromChunks([HAPPY_SSE]) },
+        { agentProfile: "spartan-trends" });
+    assert.equal(withProfile.fetchCalls[0].init.headers["x-agent-profile"], "spartan-trends");
+
+    const without = await runStream({ body: streamFromChunks([HAPPY_SSE]) });
+    assert.equal("x-agent-profile" in without.fetchCalls[0].init.headers, false,
+        "blank/unset profile sends no header (middleware default agent)");
+});
+
+test("33. AGENT_PROFILE_RX blocks values that would throw inside fetch header serialization", async () => {
+    const { AGENT_PROFILE_RX } = await import("./build/agentClient.js");
+    for (const ok of ["spartan-trends", "A1", "x_y-2", "a".repeat(64)]) {
+        assert.ok(AGENT_PROFILE_RX.test(ok), `${ok} must pass`);
+    }
+    for (const bad of ["spartan–trends", "-lead", "", "ü", "a b", "a".repeat(65), "名前"]) {
+        assert.equal(AGENT_PROFILE_RX.test(bad), false, `${JSON.stringify(bad)} must fail`);
+    }
+});

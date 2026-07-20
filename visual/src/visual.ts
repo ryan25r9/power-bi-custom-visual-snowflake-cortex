@@ -26,7 +26,7 @@ import DataView = powerbi.DataView;
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import { VisualFormattingSettingsModel } from "./settings";
 import { buildContextBlock } from "./contextBuilder";
-import { streamAgentWithRetry, ChatMessage, AgentConnection, AuthMode } from "./agentClient";
+import { streamAgentWithRetry, ChatMessage, AgentConnection, AuthMode, AGENT_PROFILE_RX } from "./agentClient";
 import { renderRichText } from "./richText";
 import vegaEmbed from "vega-embed";
 
@@ -176,6 +176,14 @@ export class Visual implements IVisual {
         const url = this.settings?.agentCard.proxyUrl.value?.trim();
         if (!question || !url || this.busy) return;
 
+        // Bad profile values would throw inside fetch (header ByteString) with a
+        // misleading "unreachable" error — catch them here with the real cause.
+        const agentProfile = this.settings.agentCard.agentProfile.value?.trim() || undefined;
+        if (agentProfile && !AGENT_PROFILE_RX.test(agentProfile)) {
+            this.showBanner("The Agent profile setting has unsupported characters — use letters, digits, hyphens, and underscores (Format › Cortex Agent › Agent profile).");
+            return;
+        }
+
         this.hideBanner();
         this.lastQuestion = question;
 
@@ -219,7 +227,8 @@ export class Visual implements IVisual {
             url,
             authMode: this.authMode(),
             credential: this.credential(),
-            conversationId: this.conversationId
+            conversationId: this.conversationId,
+            agentProfile
         };
 
         await streamAgentWithRetry(conn, payload, {

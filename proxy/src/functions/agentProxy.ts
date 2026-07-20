@@ -10,7 +10,9 @@
  * App settings required (see local.settings.json.example):
  *  SNOWFLAKE_ACCOUNT_URL  https://<org>-<account>.snowflakecomputing.com
  *  SNOWFLAKE_PAT          programmatic access token of the service user (POC auth)
- *  AGENT_DATABASE / AGENT_SCHEMA / AGENT_NAME
+ *  AGENT_DATABASE / AGENT_SCHEMA / AGENT_NAME   the default agent
+ *  AGENT_PROFILES         optional JSON map of named agent profiles — callers
+ *                         select one with x-agent-profile; see profiles.ts
  *  AUTH_MODE              "shared-key" (default) or "entra" — see auth.ts
  *  PROXY_API_KEY          shared key the visual must present (shared-key mode)
  *  ENTRA_TENANT_ID        Entra directory (tenant) GUID (entra mode)
@@ -24,6 +26,7 @@
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { authenticate, sanitizeConversationId } from "./auth";
+import { resolveAgentTarget } from "./profiles";
 
 app.setup({ enableHttpStream: true }); // required to relay SSE
 
@@ -46,7 +49,7 @@ export function corsHeaders(req: HttpRequest): Record<string, string> {
     return {
         "Access-Control-Allow-Origin": allow,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "content-type, x-proxy-key, authorization, x-conversation-id",
+        "Access-Control-Allow-Headers": "content-type, x-proxy-key, authorization, x-conversation-id, x-agent-profile",
         "Access-Control-Max-Age": "86400",
         "Vary": "Origin"
     };
@@ -83,10 +86,17 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
         return { status: 400, headers: cors, jsonBody: { error: "messages[] required" } };
     }
 
+    // --- resolve which agent this call targets (x-agent-profile header; fail-closed) ---
+    const target = resolveAgentTarget(req.headers.get("x-agent-profile"), env);
+    if (!target.ok) {
+        ctx.warn(`${tag}agent target rejected: ${target.logReason}`);
+        return { status: target.status, headers: cors, jsonBody: { error: target.clientError } };
+    }
+
     // --- relay to Snowflake ---
-    const url = `${env("SNOWFLAKE_ACCOUNT_URL")}/api/v2/databases/${env("AGENT_DATABASE")}` +
-                `/schemas/${env("AGENT_SCHEMA")}/agents/${env("AGENT_NAME")}:run`;
-    ctx.log(`${tag}relaying ${body.messages.length} message(s) to agent:run`);
+    const url = `${env("SNOWFLAKE_ACCOUNT_URL")}/api/v2/databases/${target.database}` +
+                `/schemas/${target.schema}/agents/${target.agent}:run`;
+    ctx.log(`${tag}relaying ${body.messages.length} message(s) to agent:run [profile ${target.profile}]`);
 
     let upstream: Response;
     try {
@@ -95,7 +105,7 @@ export async function agentHandler(req: HttpRequest, ctx: InvocationContext): Pr
             headers: {
                 "Content-Type": "application/json",
                 "Accept": "text/event-stream",
-                "Authorization": `Bearer ${env("SNOWFLAKE_PAT")}`,
+                "Authorization": `Bearer ${target.pat}`,
                 // Tells Snowflake the bearer token is a PAT. Officially optional, but
                 // without it Snowflake guesses the token type and a bad guess surfaces
                 // as a confusing "Invalid OAuth access token" error.

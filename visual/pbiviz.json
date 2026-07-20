@@ -4,7 +4,7 @@
     "displayName": "Snowflake Cortex Chat",
     "guid": "snowflakeCortexChatB7E2D4F19A3C",
     "visualClassName": "Visual",
-    "version": "2.0.3.0",
+    "version": "2.1.0.0",
     "description": "Chat with a Snowflake Cortex Agent using the report's current filter context. Streams answers with rich text, charts, tables and SQL audit; persists conversations across page switches; supports shared-key or bearer-token auth.",
     "supportUrl": "https://github.com/ryan25r9/power-bi-custom-visual-snowflake-cortex/issues",
     "gitHubUrl": "https://github.com/ryan25r9/power-bi-custom-visual-snowflake-cortex"

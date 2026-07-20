@@ -16,4 +16,5 @@ mkdir -p "$ROOT/tests/node_modules"
 ln -sfn "$ROOT/proxy/node_modules/jose" "$ROOT/tests/node_modules/jose"
 
 node --test "$ROOT/tests/unit-context.mjs" "$ROOT/tests/unit-agentclient.mjs" \
-            "$ROOT/tests/unit-richtext.mjs" "$ROOT/tests/unit-proxyauth.mjs"
+            "$ROOT/tests/unit-richtext.mjs" "$ROOT/tests/unit-proxyauth.mjs" \
+            "$ROOT/tests/unit-profiles.mjs"

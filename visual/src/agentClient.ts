@@ -33,13 +33,26 @@ export interface AgentConnection {
     credential: string;
     /** Client-generated conversation id, sent as x-conversation-id for log correlation. */
     conversationId?: string;
+    /** Named agent on the middleware (Format pane "Agent profile"); blank ⇒ its default agent. */
+    agentProfile?: string;
 }
+
+/**
+ * Client-side gate for the Agent profile setting (mirrors the proxy's rule).
+ * Anything outside this set — an Office-autocorrect en dash, a smart quote,
+ * non-Latin-1 text — would make fetch throw on header serialization BEFORE any
+ * request leaves the browser, surfacing as a misleading "service unreachable"
+ * error that even retries. Validate at send time and fail with a message that
+ * names the actual setting instead.
+ */
+export const AGENT_PROFILE_RX = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 function buildHeaders(conn: AgentConnection): Record<string, string> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (conn.authMode === "bearer") headers["Authorization"] = `Bearer ${conn.credential}`;
     else headers["x-proxy-key"] = conn.credential;
     if (conn.conversationId) headers["x-conversation-id"] = conn.conversationId;
+    if (conn.agentProfile) headers["x-agent-profile"] = conn.agentProfile;
     return headers;
 }
 

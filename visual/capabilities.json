@@ -21,6 +21,7 @@
     "agent": {
       "properties": {
         "proxyUrl": { "type": { "text": true } },
+        "agentProfile": { "type": { "text": true } },
         "authMode": {
           "type": {
             "enumeration": [
