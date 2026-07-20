@@ -13,8 +13,9 @@ See docs/phase1-postmortem.md; its code exists only in git history. Don't resurr
 
 ## Map
 - `visual/` — pbiviz project (v2.0). `src/visual.ts` (UI/orchestration: themed chat, tool chips,
-  SQL/chart/table cards, sticky autoscroll, storageV2 session persistence under `cortexChatSession`,
-  credential prompt), `src/richText.ts` (safe markdown-subset renderer — DOM-built, injectable doc,
+  SQL/chart/table cards, sticky autoscroll, storageV2 session persistence under `cortexChatSession`
+  — storage keyed per visual GUID + user + browser; credential deliberately spans reports, and the
+  transcript does too (known limitation, see README) — credential prompt), `src/richText.ts` (safe markdown-subset renderer — DOM-built, injectable doc,
   http(s)-only links via launchUrl; unit tests grep-ban innerHTML across visual/src),
   `src/agentClient.ts` (SSE client; takes AgentConnection {url, authMode, credential,
   conversationId} → x-proxy-key OR Bearer, never both), `src/contextBuilder.ts` (DataView→prompt),

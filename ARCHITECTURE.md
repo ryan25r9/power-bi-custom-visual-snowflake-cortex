@@ -107,7 +107,11 @@ Get written answers before wiring Model B:
    the platform team: can they host a small sign-in page that issues a token
    (or short-lived pairing code) the user can hand to the visual — the
    `launchUrl` flow in the auth ladder? Everything downstream of that token
-   (Snowflake OAuth, role, RLS) they already handle.
+   (Snowflake OAuth, role, RLS) they already handle. **Explicit requirement:
+   what the exchange hands the visual must be a refresh-capable session
+   credential, not a bare Entra access token** (~60–90 min lifetime) — see
+   "Credential UX at scale" below; without refresh, every user re-pairs
+   hourly and the UX is dead on arrival.
 2b. **Agent/application registry** — `create_thread(self, application)`
    implies agents are selected by an application parameter. CONFIRMED
    2026-07-17: onboarding = we give the platform team the security group /
@@ -171,6 +175,25 @@ the signed-in report user. Every auth design must work around that.
    `session:scope-any` Snowflake token + `X-Snowflake-Role` from the user's AD
    group). Integrating with it collapses Phase 3 into "solve step 3's token
    handoff" — the Snowflake side is done.
+
+### Credential UX at scale
+
+- Signing in is **per user** (inherent to per-user identity — role/RLS follow
+  the person), but **not per report and not per session**: the visual stores
+  the credential via the Power BI visual storage API, which is keyed by
+  **visual GUID + user + browser** — so one paste covers every report using
+  the visual on that machine.
+- Boundaries: a new browser/device is a new paste; Desktop and the Service are
+  separate storage contexts; if the tenant admin disables visual storage,
+  credentials become session-only (the visual already detects this and warns
+  in the input placeholder).
+- **Organizational-visual distribution is what guarantees the shared GUID** —
+  privately imported copies with different GUIDs get separate storage buckets.
+- The pairing exchange (ladder step 3) must issue a **refresh-capable session
+  credential, not a bare Entra access token** (~60–90 min lifetime) —
+  otherwise users re-pair hourly. With refresh, it's one paste per device,
+  silently renewed indefinitely under active use; re-pairing only on
+  revocation, password change, or Conditional Access events.
 
 ## Session management
 

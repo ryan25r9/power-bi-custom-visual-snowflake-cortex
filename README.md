@@ -150,8 +150,12 @@ See [ARCHITECTURE.md → CORS and origins](ARCHITECTURE.md#cors-and-origins).
   intended path.
 - The access key survives in browser storage; if a tenant admin disables visual
   storage, it becomes session-only and the input placeholder says so.
-- Visual storage is scoped per visual *type*, not per instance: two copies of the
-  chat visual in one report share (and overwrite) the same persisted conversation.
-  Use one chat per report, or accept that "New chat" in one resets both.
+- Visual storage is scoped per visual *type* (GUID + user + browser), not per
+  instance or per report. That cuts both ways: for the **credential** it's a
+  feature — enter it once and every report using the visual on that machine
+  works; for the **transcript** it's a limitation — all reports and instances
+  share one stored conversation, and "New chat" in any of them resets it for
+  all. Candidate fix for the transcript side: a format-pane "Session name"
+  setting so authors can key conversations per report.
 - One question at a time per visual: Send locks while a request is in flight.
   Stop (or Escape) cancels it.
