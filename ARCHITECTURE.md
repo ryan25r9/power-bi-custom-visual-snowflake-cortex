@@ -50,11 +50,15 @@ and to render the streamed answer — text, tool activity, generated SQL, charts
 
 ### Model A — bundled proxy (works today)
 
-The repo ships its own Azure Function (`proxy/`). It holds the Snowflake PAT in
-app settings, authenticates callers with a shared key (`x-proxy-key`,
-constant-time compare, fails closed), and relays the `agent:run` SSE stream
-untouched. `deploy.sh` provisions it end to end. This is the pilot path and the
-fallback if platform integration stalls.
+The repo ships its own Azure Function (`proxy/`). It holds the Snowflake PAT(s)
+in app settings, authenticates callers via a pluggable `AUTH_MODE` (shared key
+`x-proxy-key` with constant-time compare by default, or Entra bearer-JWT
+validation — both fail closed; see the auth ladder), routes each request to a
+named agent via `x-agent-profile` (see "Agent selection at scale"), answers
+CORS preflights with a wildcard (visuals have a `null` origin — see "CORS and
+origins"), and relays the `agent:run` SSE stream untouched. `deploy.sh`
+provisions it end to end. This is the pilot path and the fallback if platform
+integration stalls.
 
 ### Model B — MSU internal AI platform middleware (target)
 
