@@ -211,7 +211,8 @@ prompt carries only the first 200 rows (adjustable in the Format pane).
 
 **6. Ask a question.** The first time, the visual asks for the **access key** - paste
 the one `deploy.sh` printed. It's stored per user in browser storage, never in the
-report file, so each person enters it once.
+report file, so each person enters it once — and it's shared across every report
+that uses this visual in the same browser; they won't re-enter it per report.
 
 ## Part 4 - Prove it works
 
