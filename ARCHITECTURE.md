@@ -67,8 +67,7 @@ an Azure Function layer with real SSO. The plan is to **lean into that**: the
 visual calls the platform middleware instead of (or via) the bundled proxy, and
 the platform handles identity and Snowflake credential exchange.
 
-What we know about that platform — **VERIFIED 2026-07-17 from screenshots of
-its backend source**, which decode the earlier second-hand notes:
+What we know about that platform:
 
 - **Per-user delegated auth via OAuth On-Behalf-Of.** The backend is a
   confidential client (app id + secret from Key Vault) that takes the caller's
@@ -83,11 +82,10 @@ its backend source**, which decode the earlier second-hand notes:
   security-group membership (hence the `SG_*` role naming), and
   `session:scope-any` lets the token assume any role the user actually holds.
   Snowflake enforces membership; the client merely selects.
-- **Server-side threads.** The backend has `create_thread(self, application)` —
-  it uses the Cortex Threads API, keyed by an *application* parameter,
-  implying a platform-level registry of applications/agents. (Their backend
-  may use the generic `agent:run` form where the agent config rides the
-  request rather than a named agent object — confirm.)
+- **Server-side threads.** The backend uses the Cortex Threads API,
+  keyed by an *application* parameter, implying a platform-level registry
+  of applications/agents. It may use the generic `agent:run` form where
+  the agent config rides the request rather than a named agent object — confirm.)
 - **Streaming-ready headers.** Requests are sent with
   `Accept: application/json, text/event-stream` — the SSE path exists at
   least toward Snowflake; whether the platform relays it to callers is still
