@@ -25,6 +25,9 @@ SNOWFLAKE_ACCOUNT_URL="https://msu-prod.snowflakecomputing.com"
 AGENT_DATABASE="DBS_ANALYTICS_AI"
 AGENT_SCHEMA="SPARTAN_TRENDS_AI"
 AGENT_NAME="SPARTAN_TRENDS_CA"
+# More agents later? Add the AGENT_PROFILES app setting (JSON map of profile
+# name -> {database, schema, agent, patSetting?}) — see SETUP.md Part 2,
+# "Multiple agents". No redeploy or visual rebuild needed.
 
 # The service user's token from snowflake/grant-existing-agent.sql step 5.
 SNOWFLAKE_PAT="<paste the PAT here>"

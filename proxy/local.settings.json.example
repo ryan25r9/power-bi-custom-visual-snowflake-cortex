@@ -9,6 +9,7 @@
     "AGENT_DATABASE": "DBS_ANALYTICS_AI",
     "AGENT_SCHEMA": "SPARTAN_TRENDS_AI",
     "AGENT_NAME": "SPARTAN_TRENDS_CA",
+    "//AGENT_PROFILES": "optional JSON map of extra agents callers pick via x-agent-profile, e.g. {\"dining\":{\"database\":\"DBS_ANALYTICS_AI\",\"schema\":\"DINING_AI\",\"agent\":\"DINING_CA\",\"patSetting\":\"SNOWFLAKE_PAT_DINING\"}}",
 
     "AUTH_MODE": "shared-key",
     "PROXY_API_KEY": "<generate a long random string, e.g. openssl rand -hex 24>",

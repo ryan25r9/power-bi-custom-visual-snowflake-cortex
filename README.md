@@ -84,6 +84,12 @@ bash tools/run-e2e.sh
 
 ## Design notes
 
+- **The visual is built once; agents are runtime configuration.** The proxy can
+  front many agents via named profiles (`AGENT_PROFILES` app setting, selected
+  by the Format-pane "Agent profile" field, fail-closed on unknown names); with
+  per-profile credentials, different agents can run under different Snowflake
+  roles. Adding an agent is an app-settings edit — never a rebuild or reimport.
+  See [ARCHITECTURE.md → Agent selection at scale](ARCHITECTURE.md#agent-selection-at-scale).
 - **Context rides the latest turn only.** Older turns are resent without their
   context blocks to keep token costs down. Each new question carries fresh
   context, so slicer changes between questions are picked up.
@@ -115,7 +121,7 @@ bash tools/run-e2e.sh
 | Layer | Today (pilot) | Production upgrade |
 |---|---|---|
 | Visual to middleware | Shared key in an `x-proxy-key` header, stored per user via the visual storage API. Constant-time comparison, fails closed if unset. Bearer-token mode is built in for the platform-middleware integration | Per-user SSO via the internal AI platform's Entra app registration; see the [auth ladder](ARCHITECTURE.md#authentication). Note: private visuals cannot use Power BI's `acquireAADToken` SSO API (AppSource visuals only, still true as of mid-2026), so interactive sign-in goes through `launchUrl` |
-| Middleware to Snowflake | One service-user PAT held in Function app settings. Everyone shares that role's access | External OAuth integration with Entra ID; middleware forwards per-user tokens so Snowflake RBAC and row access policies apply per person |
+| Middleware to Snowflake | Service-user PAT(s) in Function app settings — one per agent profile if profiles are used. Every authenticated caller can reach every registered profile and its role (profiles are routing, not per-user authorization) | External OAuth integration with Entra ID; middleware forwards per-user tokens so Snowflake RBAC and row access policies apply per person |
 | Network | Snowflake network policy open by default in the scripts | Pin the policy to the Function's outbound IPs; put the PAT behind a Key Vault reference. If the account is PrivateLink-only, see [Networking](ARCHITECTURE.md#networking-read-before-deploying) first |
 
 Things the proxy does on purpose: Snowflake error bodies are logged server-side

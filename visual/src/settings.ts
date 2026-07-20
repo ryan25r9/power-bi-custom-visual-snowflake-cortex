@@ -33,6 +33,14 @@ class AgentCard extends formattingSettings.SimpleCard {
         value: AUTH_MODE_ITEMS[0]
     });
 
+    agentProfile = new formattingSettings.TextInput({
+        name: "agentProfile",
+        displayName: "Agent profile",
+        description: "Named agent registered on the middleware (e.g. spartan-trends). Leave blank for the middleware's default agent. Unknown names are rejected — ask the middleware owner to add a profile.",
+        value: "",
+        placeholder: "default"
+    });
+
     includeContext = new formattingSettings.ToggleSwitch({
         name: "includeContext",
         displayName: "Send report context",
@@ -55,7 +63,7 @@ class AgentCard extends formattingSettings.SimpleCard {
         placeholder: "e.g. Weekly sales performance for the Midwest region"
     });
 
-    slices = [this.proxyUrl, this.authMode, this.includeContext, this.maxContextRows, this.agentHint];
+    slices = [this.proxyUrl, this.agentProfile, this.authMode, this.includeContext, this.maxContextRows, this.agentHint];
 }
 
 class AppearanceCard extends formattingSettings.SimpleCard {

@@ -26,6 +26,9 @@ See docs/phase1-postmortem.md; its code exists only in git history. Don't resurr
 - `proxy/src/functions/agentProxy.ts` — @azure/functions v4 handler; CORS, SSE passthrough.
   `proxy/src/functions/auth.ts` — pluggable caller auth (AUTH_MODE: shared-key | entra bearer
   via JWKS; unknown modes fail closed; jose pinned to v5 — v6 dropped the CJS build).
+  `proxy/src/functions/profiles.ts` — named agent profiles (AGENT_PROFILES JSON, selected via
+  x-agent-profile from the format pane; identifier-validated, fail-closed; patSetting indirection
+  gives per-agent credentials/roles — see ARCHITECTURE.md "Agent selection at scale").
 - `snowflake/setup.sql` — from-scratch role/warehouse/agent DDL, service user, PAT.
   `snowflake/grant-existing-agent.sql` — wire a service user to an existing agent (filled in for
   MSU's SPARTAN_TRENDS_CA). `deploy.sh` — Azure provisioning (MSU values prefilled).
